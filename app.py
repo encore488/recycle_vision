@@ -1,312 +1,319 @@
+"""RecycleVision AI -- Streamlit front end.
+
+Presentation only. Every decision shown here is made in `recyclevision/`;
+this file's job is to render a `SortResult` and let the user prod at it.
+"""
+
+from __future__ import annotations
+
+import io
 from pathlib import Path
 
 import streamlit as st
 from PIL import Image
 
-from vision.detector import WasteDetector
-
-
-# --------------------------------------------------
-# Page Configuration
-# --------------------------------------------------
-
-st.set_page_config(
-    page_title="RecycleVision AI",
-    page_icon="♻️",
-    layout="wide"
-)
-
-
-# --------------------------------------------------
-# Paths
-# --------------------------------------------------
+from recyclevision import SortingPipeline, annotate
+from recyclevision.policy import PolicyError
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+SAMPLE_DIR = PROJECT_ROOT / "images"
 
-MODEL_PATH = PROJECT_ROOT / "models" / "best_model.pt"
-
-
-# --------------------------------------------------
-# Load Model
-# --------------------------------------------------
-
-@st.cache_resource
-def load_detector():
-    return WasteDetector(MODEL_PATH)
+st.set_page_config(page_title="RecycleVision AI", page_icon="♻️", layout="wide")
 
 
-detector = load_detector()
+# --------------------------------------------------------------------------
+# Pipeline
+# --------------------------------------------------------------------------
 
 
-# --------------------------------------------------
+@st.cache_resource(show_spinner="Loading model…")
+def load_pipeline() -> SortingPipeline:
+    return SortingPipeline.build()
+
+
+@st.cache_data(show_spinner=False)
+def sort_image(_pipeline: SortingPipeline, image_bytes: bytes, confidence: float):
+    """Run the pipeline, keyed on the image and threshold.
+
+    Cached so that flipping a display toggle re-renders the annotation
+    without paying for inference again.
+    """
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    return image, _pipeline.sort(image, confidence=confidence)
+
+
+try:
+    pipeline = load_pipeline()
+except (PolicyError, FileNotFoundError) as exc:
+    st.error(f"Could not start: {exc}")
+    st.stop()
+except Exception as exc:  # noqa: BLE001 - surface anything to the user, not the logs
+    st.error(f"Could not load the detection model: {exc}")
+    st.info("Check your network connection -- the stock model downloads on first run.")
+    st.stop()
+
+policy = pipeline.policy
+weights = pipeline.detector.weights
+
+
+# --------------------------------------------------------------------------
 # Sidebar
-# --------------------------------------------------
+# --------------------------------------------------------------------------
 
 with st.sidebar:
-
     st.title("⚙️ Settings")
 
     confidence = st.slider(
-        "Confidence Threshold",
+        "Confidence threshold",
         min_value=0.10,
-        max_value=1.00,
+        max_value=0.95,
         value=0.25,
-        step=0.05
+        step=0.05,
+        help="Lower catches more objects but with more false positives.",
     )
 
-    show_masks = st.checkbox(
-        "Show Segmentation Masks",
-        value=False,
-        disabled=True
-    )
-
-    show_labels = st.checkbox(
-        "Show Labels",
-        value=True
-    )
-
-    show_boxes = st.checkbox(
-        "Show Bounding Boxes",
-        value=True
-    )
+    st.subheader("Display")
+    show_boxes = st.checkbox("Bounding boxes", value=True)
+    show_labels = st.checkbox("Bin labels", value=True)
+    show_confidence = st.checkbox("Confidence on labels", value=True)
 
     st.divider()
 
-    st.header("Model")
+    st.subheader("Model")
+    if weights.is_custom:
+        st.success(weights.display_name)
+    else:
+        st.warning(weights.display_name)
+        st.caption(weights.caveat)
 
-    st.success("YOLOv8 Waste Detection")
+    st.subheader("Policy")
+    st.info(policy.name)
+    st.caption(policy.description)
 
-    st.caption(
-        "Prototype model trained to detect "
-        "glass, metal, paper, plastic, and waste."
-    )
+    with st.expander("Bins in this policy"):
+        for bin_ in policy.bins:
+            st.markdown(f"**{bin_.name}**")
+            st.caption(bin_.description)
 
 
-# --------------------------------------------------
+# --------------------------------------------------------------------------
 # Header
-# --------------------------------------------------
+# --------------------------------------------------------------------------
 
 st.title("♻️ RecycleVision AI")
+st.markdown("#### Point it at waste. It tells you which bin each item goes in — and why.")
 
-st.markdown(
-    """
-### Intelligent Recycling Through Computer Vision
+if not weights.is_custom:
+    st.warning(f"**Demo mode.** {weights.caveat}", icon="⚠️")
 
-RecycleVision AI uses computer vision to identify recyclable
-materials from images. This prototype demonstrates the
-vision pipeline that will eventually analyze recycling
-conveyor belts in real time.
-"""
+
+# --------------------------------------------------------------------------
+# Input
+# --------------------------------------------------------------------------
+
+samples = sorted(p for p in SAMPLE_DIR.glob("*") if p.suffix.lower() in {".jpg", ".jpeg", ".png"})
+
+uploaded = st.file_uploader(
+    "Upload a photo of waste or recycling",
+    type=["jpg", "jpeg", "png"],
 )
 
-st.divider()
+if samples:
+    st.caption("…or try one of the samples:")
+    sample_cols = st.columns(min(len(samples), 4))
+    for column, sample in zip(sample_cols, samples, strict=False):
+        if column.button(sample.stem, use_container_width=True):
+            st.session_state["sample"] = str(sample)
+
+image_bytes: bytes | None = None
+source_name = ""
+
+if uploaded is not None:
+    image_bytes = uploaded.getvalue()
+    source_name = uploaded.name
+    st.session_state.pop("sample", None)
+elif "sample" in st.session_state:
+    sample_path = Path(st.session_state["sample"])
+    if sample_path.is_file():
+        image_bytes = sample_path.read_bytes()
+        source_name = sample_path.name
 
 
-# --------------------------------------------------
-# Upload
-# --------------------------------------------------
-
-uploaded_file = st.file_uploader(
-    "Upload an image of recyclable materials",
-    type=["jpg", "jpeg", "png"]
-)
+# --------------------------------------------------------------------------
+# Rendering helpers
+# --------------------------------------------------------------------------
 
 
-# --------------------------------------------------
+def render_bin_card(bin_, items) -> None:
+    """One bin, its items, and what to do with them."""
+    with st.container(border=True):
+        st.markdown(
+            f"<div style='display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem'>"
+            f"<span style='width:1rem;height:1rem;border-radius:3px;"
+            f"background:{bin_.color};display:inline-block'></span>"
+            f"<strong style='font-size:1.05rem'>{bin_.name}</strong>"
+            f"<span style='margin-left:auto;opacity:.65'>{len(items)}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(bin_.description)
+
+        for item in items:
+            flag = " ⚠️" if item.needs_review else ""
+            st.markdown(f"**{item.label}**{flag} · {item.confidence:.0%}")
+            if item.handling:
+                st.caption(item.handling)
+
+
+# --------------------------------------------------------------------------
 # Results
-# --------------------------------------------------
+# --------------------------------------------------------------------------
 
-if uploaded_file is not None:
-
-    image = Image.open(uploaded_file).convert("RGB")
-
-    # Run detection
-    with st.spinner("Analyzing image..."):
-
-        result = detector.detect(
+if image_bytes is not None:
+    with st.spinner("Analysing…"):
+        image, result = sort_image(pipeline, image_bytes, confidence)
+        annotated = annotate(
             image,
-            confidence=confidence
+            result,
+            show_boxes=show_boxes,
+            show_labels=show_labels,
+            show_confidence=show_confidence,
         )
 
-        counts = detector.get_counts(result)
-
-        detections = detector.get_detections(result)
-
-        annotated_image = detector.get_annotated_image(result)
-
-    # --------------------------------------------------
-    # Top Metrics
-    # --------------------------------------------------
-
-    total_objects = len(detections)
-
-    if total_objects > 0:
-        average_confidence = (
-            sum(d["confidence"] for d in detections)
-            / total_objects
+    if result.total_items == 0:
+        st.info(
+            "No waste items detected. Try lowering the confidence threshold in the "
+            "sidebar, or use a photo where the items are clearly separated."
         )
-    else:
-        average_confidence = 0
+        if result.ignored:
+            seen = sorted({d.label for d in result.ignored})
+            st.caption(f"The model did see: {', '.join(seen)} — none of which are waste.")
 
-    recyclable_classes = {
-        "plastic",
-        "glass",
-        "metal",
-        "paper"
-    }
-
-    recyclable_objects = sum(
-        count
-        for material, count in counts.items()
-        if material in recyclable_classes
+    # ---- headline metrics
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Items", result.total_items)
+    m2.metric(
+        "Diverted from landfill",
+        f"{result.diversion_rate:.0%}",
+        help="Share of items headed anywhere other than landfill.",
     )
-
-    recyclable_percentage = (
-        recyclable_objects / total_objects * 100
-        if total_objects > 0
-        else 0
+    m3.metric(
+        "Contamination",
+        f"{result.contamination_rate:.0%}",
+        help="Share of the stream that is not recoverable. The metric sorting facilities track.",
     )
-
-    metric1, metric2, metric3, metric4 = st.columns(4)
-
-    metric1.metric(
-        "Objects Detected",
-        total_objects
-    )
-
-    metric2.metric(
-        "Recyclable",
-        f"{recyclable_percentage:.0f}%"
-    )
-
-    metric3.metric(
-        "Avg. Confidence",
-        f"{average_confidence:.0%}"
-    )
-
-    metric4.metric(
-        "Model",
-        "YOLOv8"
+    m4.metric(
+        "Needs review",
+        len(result.items_for_review),
+        help="Items where the policy cannot be sure of the destination.",
     )
 
     st.divider()
 
-    # --------------------------------------------------
-    # Images
-    # --------------------------------------------------
+    # ---- images
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Original")
+        st.image(image, use_container_width=True)
+    with right:
+        st.subheader("Sorted")
+        st.image(annotated, use_container_width=True)
+        st.caption("Each box is coloured by destination bin, not by object class.")
 
-    image_left, image_right = st.columns(2)
+    # ---- bins
+    if result.items:
+        st.divider()
+        st.subheader("Where it goes")
 
-    with image_left:
+        bins_used = result.bins_used
+        for row_start in range(0, len(bins_used), 3):
+            row = bins_used[row_start : row_start + 3]
+            columns = st.columns(3)
+            for column, bin_ in zip(columns, row, strict=False):
+                with column:
+                    render_bin_card(bin_, result.items_in(bin_.key))
 
-        st.subheader("Original Image")
-
-        st.image(
-            image,
-            use_container_width=True
+    # ---- review queue
+    if result.items_for_review:
+        st.divider()
+        st.subheader("⚠️ Worth a second look")
+        st.caption(
+            "The model is confident about what it saw; the policy is not confident "
+            "about where it goes."
         )
+        for item in result.items_for_review:
+            with st.container(border=True):
+                st.markdown(f"**{item.label}** → {item.bin.name}")
+                if item.rationale:
+                    st.write(item.rationale)
 
-    with image_right:
+    # ---- details
+    with st.expander("Detection details"):
+        st.caption(f"Model: {result.model_name} · Policy: {result.policy_name} · {source_name}")
 
-        st.subheader("AI Detection")
-
-        st.image(
-            annotated_image,
-            use_container_width=True
-        )
-
-    st.divider()
-
-    # --------------------------------------------------
-    # Material Counts
-    # --------------------------------------------------
-
-    st.subheader("Material Counts")
-
-    materials = [
-        ("🟢 Plastic", "plastic"),
-        ("🔵 Glass", "glass"),
-        ("🟡 Metal", "metal"),
-        ("🟤 Paper", "paper"),
-        ("⚪ Waste", "waste"),
-    ]
-
-    columns = st.columns(len(materials))
-
-    for column, (label, key) in zip(columns, materials):
-
-        with column:
-
-            count = counts.get(key, 0)
-
-            st.metric(
-                label,
-                count
+        if result.items:
+            st.dataframe(
+                [
+                    {
+                        "Item": item.label,
+                        "Detected as": item.detection.label,
+                        "Bin": item.bin.name,
+                        "Material": item.material,
+                        "Confidence": f"{item.confidence:.1%}",
+                        "Certainty": item.certainty.value,
+                    }
+                    for item in result.items
+                ],
+                use_container_width=True,
+                hide_index=True,
             )
 
-    # --------------------------------------------------
-    # Detection Details
-    # --------------------------------------------------
-
-    with st.expander("View Detection Details"):
-
-        if detections:
-
-            for detection in detections:
-
-                st.write(
-                    f"**{detection['class'].title()}** — "
-                    f"{detection['confidence']:.1%} confidence"
-                )
-
-        else:
-
-            st.write("No objects detected.")
+        if result.ignored:
+            seen = sorted({d.label for d in result.ignored})
+            st.caption(
+                f"Ignored as non-waste: {', '.join(seen)}. "
+                "These are excluded from every metric above."
+            )
 
 else:
-
-    # --------------------------------------------------
-    # Empty State
-    # --------------------------------------------------
-
-    st.info(
-        "Upload an image above to begin AI analysis."
-    )
-
+    # ---------------------------------------------------------------- empty
+    st.info("Upload an image or pick a sample to begin.")
     st.divider()
 
-    st.subheader("How It Works")
-
+    st.subheader("How it works")
     step1, step2, step3 = st.columns(3)
-
     with step1:
-        st.markdown("### 1️⃣ Upload")
-        st.write(
-            "Upload an image containing recyclable "
-            "materials."
-        )
-
+        st.markdown("### 1️⃣ Detect")
+        st.write("A vision model locates every object in the image.")
     with step2:
-        st.markdown("### 2️⃣ Analyze")
+        st.markdown("### 2️⃣ Route")
         st.write(
-            "The computer vision model identifies "
-            "waste and recyclable materials."
+            "A routing policy decides which bin each item belongs in — "
+            "based on local rules, not just what it is made of."
         )
-
     with step3:
-        st.markdown("### 3️⃣ Understand")
+        st.markdown("### 3️⃣ Explain")
         st.write(
-            "View detected objects, confidence scores, "
-            "and material counts."
+            "Every decision comes with handling instructions, and flags "
+            "the items a human should check."
         )
 
+    st.divider()
+    st.subheader("Why bins, not materials")
+    st.markdown(
+        """
+Material does not determine destination, which is why classifying waste by
+material gets the hard cases wrong:
 
-# --------------------------------------------------
-# Footer
-# --------------------------------------------------
+- A **wine glass** is glass, but belongs in **landfill** — drinking glass melts at a
+  different temperature and ruins a batch of recycled container glass.
+- A **disposable coffee cup** is paper, but belongs in **landfill** — it is plastic-lined.
+- A **pizza slice** is organic, and belongs in **compost**, not recycling.
+
+RecycleVision routes to bins directly, and tells you why.
+        """
+    )
+
 
 st.divider()
-
-st.caption(
-    "RecycleVision AI • Prototype v0.2"
-)
+st.caption(f"RecycleVision AI v0.3 · {policy.name} · {weights.display_name}")

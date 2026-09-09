@@ -3,192 +3,193 @@
 Working plan for taking RecycleVision from prototype to a demo-able, resume-ready,
 and eventually genuinely useful tool.
 
-**Status:** Prototype v0.2 — Streamlit UI + YOLO wrapper, no weights shipped.
+**Status:** v0.3 — rebuilt around bin routing. Runs on stock YOLO weights.
+
+## The product, in one sentence
+
+**Point it at waste; it tells you which bin each item goes in, and why.**
+
+Not "what material is this" — *where does this go*. That distinction drives everything below.
 
 ## Goals, in priority order
 
 1. **Runnable in 30 seconds by a stranger.** No weights hunt, no setup ritual, ideally a live URL.
 2. **Answers a question a human actually has.** "4 objects at 83% confidence" is not useful.
-   "That's recyclable — rinse it, lid goes separately" is.
+   "Blue bin — rinse it first; the cap goes in too" is.
 3. **Demonstrates the conveyor-belt endgame** instead of promising it in a README.
+
+## Core architecture: detection is not the product, routing is
+
+```
+image ──▶ Detector ──▶ Detection(class, confidence, box)
+                            │
+                            ▼
+                     RoutingPolicy  ◀── policies/*.yaml   (facility-specific)
+                            │
+                            ▼
+              RoutedItem(bin, handling notes, certainty)
+                            │
+                            ▼
+                   SortResult ──▶ UI / API / robot
+```
+
+Three swappable pieces, each isolated behind a small interface:
+
+- **Detector** — stock COCO YOLO today, custom conveyor-trained model later. The rest of the
+  system never learns which.
+- **RoutingPolicy** — a YAML file, not code. Maps whatever classes the detector emits onto
+  bins, with handling notes and a certainty flag. A new municipality or facility is a new
+  file.
+- **Presentation** — Streamlit today, FastAPI and robot control later, reading the same
+  `SortResult`.
+
+### Why this shape
+
+- The eventual custom model ships as an *identity-ish* policy; no UI changes.
+- A MRF's bins (PET / HDPE / OCC / aluminum / residue) and an office's bins
+  (recycling / compost / landfill / special) are the same code, different config.
+- Contamination rate falls out for free: it is the residue share of the stream.
+- Low-certainty routes are an explicit first-class outcome, which is exactly the hook that
+  later feeds the VLM fallback and the active-learning loop.
+
+### Bins, not materials
+
+Materials are still tracked as an item attribute, but they are not the output. This matters
+because material does not determine destination:
+
+- A **wine glass** is glass and belongs in **landfill** — drinking glass has a different
+  melt point than container glass and contaminates the batch.
+- A **disposable coffee cup** is paper and belongs in **landfill** — it is plastic-lined.
+- A **pizza slice** is organic and belongs in **compost**, not recycling.
+
+A material-first design gets all three of these wrong. A bin-first design gets them right and
+can explain itself.
 
 ## Standing decisions
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Model for now | Stock `yolov8n.pt` (COCO) | No custom weights exist yet; stock keeps the repo clonable and the demo live today. |
-| Model later | Custom model trained on real conveyor footage | The actual differentiator. Everything is built to swap the model without touching the UI. |
-| Class handling | Detector classes → materials via a mapping layer | Decouples the app from whichever model is loaded. See "The material mapping layer" below. |
-| Audience | Both resume/demo **and** eventual real tool | Milestones 1–3 serve both. Where they conflict, the demo wins until the video is shot. |
+| Output | Bin routing decision | The thing a user or a robot actually needs. |
+| Model now | Stock `yolov8n.pt` (COCO) | No custom weights exist; keeps the repo clonable and the demo live today. |
+| Model later | Custom model trained on real conveyor footage | The actual differentiator. Swapped without touching the UI. |
+| Routing rules | YAML policy files, not code | Facility-specific; must be editable without a deploy. |
+| Non-waste classes | Explicitly ignored, not counted | COCO detects people, cars, dogs. They are not waste. |
+| Audience | Both resume/demo **and** eventual real tool | Milestones 1–3 serve both; where they conflict, the demo wins until the video is shot. |
 
-## Known defects in the current code
+## Restructure: what happened to v0.2
 
-These block everything else and should be cleared first.
+The v0.2 code was a Streamlit UI calling a YOLO wrapper, with material logic hardcoded across
+`app.py`. Rather than a ground-up rewrite (wasteful — the UI shape was sound), v0.3:
 
-- [ ] **The app cannot start from a fresh clone.** `models/best_model.pt` is gitignored
-      and there is no download or fallback path, so `WasteDetector(MODEL_PATH)` raises at
-      import time. (`app.py:26`, `app.py:38`)
-- [ ] **Annotated image has swapped color channels.** `result.plot()` returns BGR;
-      `st.image()` assumes RGB. The "AI Detection" panel renders with red and blue inverted
-      relative to the original beside it. Fix: `result.plot()[..., ::-1]`.
-      (`vision/detector.py:50`)
-- [ ] **Three sidebar controls are dead.** `show_labels`, `show_boxes`, `show_masks` are
-      read but never passed anywhere — `get_annotated_image()` takes no arguments.
-      Fix: forward them to `result.plot(labels=…, boxes=…, masks=…)`.
-      (`app.py:57-71`, `vision/detector.py:50`)
-- [ ] **Class names are hardcoded and unverified.** `recyclable_classes` and the `materials`
-      list assume the model emits exactly `plastic`/`glass`/`metal`/`paper`/`waste`. Any other
-      naming silently displays 0 for every count with no error. (`app.py:151`, `app.py:226`)
-- [ ] **`st.metric("Model", "YOLOv8")` is hardcoded** rather than read from the loaded model.
-      (`app.py:187`)
-- [ ] **`requirements.txt` is UTF-16 and a full 62-line `pip freeze`.** pip reads it via the
-      BOM, but it is unreadable in GitHub diffs and most editors, and it pins transitive deps.
-      Rewrite as UTF-8 with ~8 direct dependencies, plus a `requirements-dev.txt`.
-- [ ] **`README.txt` won't render on GitHub**, has an unclosed code fence that swallows the
-      second half of the document, roadmap checkboxes that don't render, and instructs
-      `cd recycle_sort` for a repo named `recycle_vision`.
-- [ ] Unused `Path` import in `vision/detector.py:1`.
-
-## The material mapping layer
-
-The most important structural change, and the one that makes the stock-model-now /
-custom-model-later plan work.
-
-Stock YOLOv8 is COCO-trained: it has no `plastic`, `glass`, `metal`, or `paper` classes.
-It has `bottle`, `wine glass`, `cup`, `bowl`, `fork`, `book`, `banana`, and so on. Rather
-than fight that, introduce a mapping from **detector class → material**, loaded from config:
-
-```
-bottle      → plastic   (ambiguous: could be glass — flag low certainty)
-wine glass  → glass
-vase        → glass
-cup         → paper
-book        → paper
-fork/knife/spoon/scissors → metal
-banana/apple/orange/pizza/broccoli/carrot → organic  (compost — contamination if in the stream)
-(everything else)         → waste
-```
-
-Two payoffs:
-
-- The demo works **today** on real photos with stock weights.
-- When the custom conveyor model lands, it ships an identity mapping and nothing in the UI
-  changes. The abstraction is needed either way.
-
-The UI should be honest about which model is loaded and how confident the mapping is — a
-banner reading "Running on stock COCO weights; material inference is approximate" costs
-nothing and reads as rigor rather than as a caveat.
+- **Replaces** `vision/` with a `recyclevision/` package: `detector`, `policy`, `pipeline`,
+  `render`, `models`, `weights`.
+- **Rewrites** `app.py` as presentation only — no domain logic.
+- **Deletes** `vision/test_model.py` (a scratch script), superseded by real tests and a CLI.
+- **Keeps** the page layout, the sidebar-controls idea, and the sample images.
 
 ---
 
-## Milestone 1 — "It runs"
+## Milestone 1 — "It runs, and it routes"  ← in progress
 
-Nothing else matters until a stranger can click a link and see it work.
+A stranger can clone it, run it, and get a correct, explained bin decision.
 
-- [ ] Model bootstrap: try `models/best_model.pt`; if absent, auto-download stock
-      `yolov8n.pt` on first launch and show a clear banner about which model is active.
-- [ ] Fix the BGR swap.
-- [ ] Wire up the three dead sidebar toggles.
-- [ ] Build the material mapping layer; read class names from `model.names`.
-- [ ] Rewrite `requirements.txt` as UTF-8 with direct dependencies only.
-- [ ] `README.txt` → `README.md`: fixed fences, correct repo name, honest status, and an
-      animated GIF of the app running at the top.
-- [ ] Extract business logic (recyclable %, counts, material math) out of `app.py` into a
-      `core/` module — one source of truth, testable without Streamlit.
-- [ ] `pytest` suite with a stub detector so tests run without weights; golden-output
-      regression on the two sample images in `images/`.
-- [ ] GitHub Actions: ruff + pytest + an import smoke test.
+- [ ] `recyclevision/` package: `Detector` protocol + `YoloDetector`, `RoutingPolicy`,
+      `SortingPipeline`, dataclass domain models.
+- [ ] `policies/household.yaml` — COCO classes → bins, with handling notes, certainty flags,
+      and explicit non-waste ignores.
+- [ ] Model bootstrap: prefer `models/best_model.pt`; auto-download stock `yolov8n.pt` if
+      absent; banner clearly stating which model is live.
+- [ ] Bin-coloured annotation rendered in RGB via PIL — fixes the v0.2 BGR/RGB channel swap
+      by not round-tripping through `result.plot()` at all, and colours each box by
+      *destination* rather than by class.
+- [ ] Sidebar controls that actually do something (the v0.2 toggles were wired to nothing).
+- [ ] `app.py` rewritten: bin cards, diversion rate, per-item explanations, review queue.
+- [ ] Headless CLI (`python -m recyclevision`) so the pipeline is testable and scriptable
+      without Streamlit.
+- [ ] `pytest` suite with a stub detector — full pipeline coverage with no weights, no
+      network, no torch.
+- [ ] `requirements.txt` rewritten as UTF-8 with direct dependencies only (v0.2's was UTF-16
+      and a 62-line `pip freeze`); `requirements-dev.txt` split out.
+- [ ] `README.txt` → `README.md` (v0.2's had an unclosed code fence swallowing half the doc
+      and the wrong repo name).
+- [ ] GitHub Actions: ruff + pytest.
 - [ ] **Deploy to Streamlit Community Cloud or Hugging Face Spaces.**
 
 > A live URL in the README is worth more than any single feature on this list.
 
-**Done when:** `git clone && pip install -r requirements.txt && streamlit run app.py` works
-on a clean machine, CI is green, and the README links to a working hosted demo.
+**Done when:** clean-machine clone runs, CI is green, README links a working hosted demo.
 
-## Milestone 2 — "It's useful"
+## Milestone 2 — "It's quantified"
 
-The jump from demo to product. This is what makes non-engineers care.
+Make the routing decisions measurable and exportable.
 
-- [ ] **Disposal guidance layer.** A pluggable JSON ruleset (`rules/`) mapping material →
-      what to actually do: rinse, remove lid, which bin, and contamination warnings
-      (greasy pizza box, plastic bags, black plastic). Structured so a second municipality
-      is a data file, not a code change.
-- [ ] **Contamination rate.** Percentage of non-recyclable items in the stream, with a
-      red/amber/green verdict per frame. This is *the* metric materials recovery facilities
-      actually track — it maps straight onto the conveyor goal and signals domain awareness.
+- [ ] **Diversion and contamination rates** as headline metrics, tracked across a session.
 - [ ] **Impact accounting.** Estimated mass (average mass per item class) and CO₂e avoided
-      using published EPA WARM factors, accumulated across a session. Grounded in real
-      figures, cited in the UI — never invented numbers.
-- [ ] Per-detection table with bbox geometry; CSV/JSON export.
-- [ ] Batch mode: upload N images, get aggregate statistics and a summary report.
-
-**Done when:** the app tells you what to *do*, not just what it *sees*.
+      using published EPA WARM factors. Grounded in real, cited figures — never invented.
+- [ ] Per-detection table with bbox geometry; CSV/JSON export; batch mode over N images with
+      an aggregate report.
+- [ ] A second policy file (a real municipality's rules) to prove the abstraction holds, plus
+      a policy picker in the UI.
+- [ ] Policy schema validation with helpful errors, so a hand-edited YAML fails loudly.
 
 ## Milestone 3 — "It's real"
 
-The conveyor demo. This is what makes engineers care, and it is the centerpiece of the
-resume video.
+The conveyor demo, and the centrepiece of the resume video.
 
-- [ ] **Video upload + object tracking.** `model.track(persist=True)` with ByteTrack, a
-      virtual count line, each item counted exactly once as it crosses. Roughly a day of
-      work and the highest impressiveness-per-hour item on this entire document.
-- [ ] Throughput metrics: items/minute, FPS, per-frame latency distribution.
+- [ ] **Video upload + object tracking.** `model.track(persist=True)` with ByteTrack, a virtual
+      count line, each item counted exactly once as it crosses. Roughly a day of work and the
+      highest impressiveness-per-hour item in this document.
+- [ ] Per-bin running tallies and throughput: items/minute, FPS, latency distribution.
 - [ ] Webcam / live stream input mode.
-- [ ] **Record the demo video.** Conveyor footage in, live counts and contamination rate out.
+- [ ] **Record the demo video.** Conveyor footage in, live bin tallies and contamination rate out.
 
-**Done when:** there is a 60-second video showing material flowing past a count line with
-live tallies, good enough to put on a resume.
+**Done when:** there is a 60-second video of material flowing past a count line with live
+per-bin tallies, good enough for a resume.
 
 ## Milestone 4 — "It's credible ML"
 
-Separates "used a model" from "understands ML". Largely gated on having real data.
+Separates "used a model" from "understands ML". Gated on real data.
 
 - [ ] **Capture conveyor footage.** The blocking dependency for everything below.
-- [ ] Dataset + data card: sourcing, label taxonomy, class balance, train/val/test split,
-      known biases. Public options for bootstrapping before own footage exists: TACO,
-      TrashNet, ZeroWaste.
+- [ ] Dataset + data card: sourcing, label taxonomy, class balance, splits, known biases.
+      Public bootstraps: TACO, TrashNet, ZeroWaste.
+- [ ] Label taxonomy designed *backwards from the bins* — classes should be the distinctions
+      that change a routing decision, not an arbitrary material ontology.
 - [ ] `train.py` with reproducible hyperparameters and logged runs.
-- [ ] **Evaluation page:** mAP50-95, per-class precision/recall curves, confusion matrix,
-      latency distribution on a held-out set.
-- [ ] Publish trained weights as a GitHub Release asset; bootstrap prefers them over stock.
-- [ ] **Active learning loop.** Let the user correct a wrong detection in the UI and write
-      the corrected label to `data/feedback/` in YOLO format. Rarely built, feeds the
-      dataset directly, and is a strong thing to be able to talk about in an interview.
-
-**Done when:** the model is trained on real conveyor data and there are honest numbers
-published for how well it performs.
+- [ ] **Evaluation page:** mAP50-95, per-class PR curves, confusion matrix, latency
+      distribution on a held-out set. Report *routing* accuracy, not just detection mAP —
+      a confusion between two classes that share a bin costs nothing.
+- [ ] Publish weights as a GitHub Release asset; bootstrap prefers them over stock.
+- [ ] **Active learning loop.** Correct a wrong route in the UI; write the corrected label to
+      `data/feedback/` in YOLO format. Feeds the dataset and makes a great interview story.
 
 ## Milestone 5 — "It's a system"
 
-Turns a Streamlit toy into something deployable.
-
-- [ ] FastAPI `/detect` endpoint, with a `curl` example in the README. Also the natural seam
-      for future robot/PLC integration.
+- [ ] FastAPI `/sort` endpoint returning `SortResult` as JSON, with a `curl` example. The
+      natural seam for robot/PLC integration.
 - [ ] Dockerfile + compose.
-- [ ] ONNX export and a CPU latency comparison table — delivers the "edge deployment"
-      roadmap item in a demonstrable form.
-- [ ] Config via `config.yaml` / typed settings rather than hardcoded paths and constants.
+- [ ] ONNX export and a CPU latency table — the "edge deployment" item, made demonstrable.
+- [ ] Typed settings/config rather than constants.
 
 ## Backlog — differentiators
 
-Not scheduled. Pull forward whichever fits the moment.
-
-- **Hybrid VLM fallback.** When YOLO is low-confidence or the object is outside the class
-  vocabulary, send the crop to a vision-language model for a plain-language "what is this /
-  is it recyclable" answer. Fast-detector-plus-VLM-for-hard-cases is a modern architecture
-  and it fixes the closed-set limitation that will otherwise always cap this project.
-- **Resin code OCR.** Detect and read the ♳–♹ triangle number on plastics. Very few projects
-  do it, and it is exactly the detail that makes recycling decisions actually correct.
-- **Instance segmentation** (`yolov8-seg`) → per-item area → better mass estimates. Also
-  finally makes the `show_masks` toggle mean something.
-- **Metric sizing** via an ArUco fiducial marker in frame.
-- **Robot integration stub.** Publish detections over MQTT / ROS 2 with pick coordinates and
-  a suggested gripper per item. Even as a stub, it proves the endgame was thought through.
+- **Hybrid VLM fallback.** Route low-certainty items to a vision-language model for a
+  plain-language identification. Fixes the closed-set limitation that otherwise caps this
+  project permanently. The certainty flag from Milestone 1 is the hook.
+- **Resin code OCR.** Read the ♳–♹ triangle on plastics — often *the* fact that determines
+  the correct bin.
+- **Instance segmentation** → per-item area → better mass estimates, and makes a masks toggle
+  meaningful.
+- **Metric sizing** via an ArUco fiducial in frame.
+- **Robot integration stub.** Publish `SortResult` over MQTT / ROS 2 with pick coordinates and
+  a suggested gripper per bin.
 
 ## Working conventions
 
 - Tests and CI are part of each milestone, not a cleanup pass afterward.
-- The UI never claims more certainty than the model has — banner the stock-weights caveat,
-  show confidence, cite sources for impact figures.
-- Every milestone ends in something demonstrable, because the resume video may need to be
-  shot at any point.
+- Domain logic lives in `recyclevision/`; `app.py` is presentation only.
+- Facility- and region-specific knowledge lives in `policies/`, never in code.
+- The UI never claims more certainty than it has — banner the stock-weights caveat, surface
+  low-certainty routes for review, cite sources for impact figures.
+- Every milestone ends in something demonstrable, because the resume video may need to be shot
+  at any point.

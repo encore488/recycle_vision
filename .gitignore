@@ -18,12 +18,21 @@ models/*.onnx
 
 # Generated outputs
 outputs/*
+out/
+
+# Stock weights fetched at runtime
+yolov8*.pt
 
 # Streamlit
 .streamlit/secrets.toml
 
 # IDE
 .vscode/
+.idea/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
 
 # OS
 .DS_Store

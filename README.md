@@ -1,0 +1,171 @@
+# ♻️ RecycleVision AI
+
+**Point it at waste. It tells you which bin each item goes in — and why.**
+
+RecycleVision is a computer vision system for waste sorting. The long-term goal is
+real-time perception for recycling conveyor belts, and eventually for automated
+robotic sorting.
+
+> **Status:** v0.3, early but working. Runs on stock COCO weights while a
+> waste-specific model is trained — see [ROADMAP.md](ROADMAP.md).
+
+## Bins, not materials
+
+Most waste classifiers tell you what something is made of. That is the wrong
+answer, because material does not determine destination:
+
+| Item | Material | Correct bin | Why |
+| --- | --- | --- | --- |
+| Wine glass | Glass | **Landfill** | Drinking glass melts at a different temperature and ruins a batch of recycled container glass. |
+| Disposable coffee cup | Paper | **Landfill** | Plastic-lined; rejected by most programs. |
+| Pizza slice | Organic | **Compost** | Food waste, not recycling. |
+| Plastic bottle | Plastic | **Recycling** | The easy case still has to work. |
+
+A material-first design gets the first three wrong. RecycleVision routes to bins
+directly, attaches handling instructions, and flags the items where it genuinely
+cannot be sure.
+
+## How it works
+
+```
+image ──▶ Detector ──▶ Detection(class, confidence, box)
+                            │
+                            ▼
+                     RoutingPolicy  ◀── policies/*.yaml
+                            │
+                            ▼
+              RoutedItem(bin, handling, certainty)
+                            │
+                            ▼
+                       SortResult ──▶ UI / CLI
+```
+
+Three swappable pieces:
+
+- **Detector** — stock YOLOv8 today, a conveyor-trained model later. Nothing
+  downstream knows the difference.
+- **RoutingPolicy** — a YAML file, not code. Local recycling rules live in
+  `policies/`, so a new municipality or facility is a new file rather than a
+  deploy.
+- **Presentation** — Streamlit and a CLI today; an HTTP API and robot control
+  later, all reading the same `SortResult`.
+
+## Quick start
+
+```bash
+git clone https://github.com/encore488/recycle_vision.git
+cd recycle_vision
+
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
+
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+No model download step: if `models/best_model.pt` is absent, stock `yolov8n.pt`
+is fetched automatically on first run and the UI says clearly that it is running
+in demo mode. Sample images are included, so you can try it without a photo of
+your own.
+
+## Command line
+
+For scripting, or just to check it works without a browser:
+
+```bash
+python -m recyclevision images/recycl_test.jpg
+python -m recyclevision images/*.jpg --json
+python -m recyclevision images/recycl_test.jpg --save-annotated out/
+```
+
+```
+images/recycl_test.jpg
+  model  YOLOv8n (COCO)
+  policy Household Single-Stream
+  3 item(s), 67% diverted from landfill
+
+  Mixed Recycling (2)
+    - Beverage bottle  91%
+        Empty and rinse. Leave the cap screwed on.
+
+  Landfill (1)
+    - Cup  44%  [review]
+        If it is a ceramic mug, keep or donate it instead.
+```
+
+## Writing a policy
+
+A policy maps detector class names onto bins. Only `bin` is required:
+
+```yaml
+name: Household Single-Stream
+default: ignore          # unlisted classes are not waste, so don't count them
+
+bins:
+  - key: recycling
+    name: Mixed Recycling
+    color: "#1E6FD9"
+    diverted: true       # false for landfill/residue; drives the diversion rate
+
+rules:
+  wine glass:
+    bin: landfill
+    item: Drinking glass
+    material: glass
+    handling: Wrap before binning if broken.
+    certainty: high
+    rationale: >-
+      Not a container glass — it melts at a different temperature and will
+      ruin a batch of recycled container glass.
+```
+
+`certainty: low` marks a route the system is not sure of. Those items are
+surfaced in a review queue rather than counted silently, which is also the hook
+for a future model-assisted fallback.
+
+`default: ignore` matters more than it looks: COCO detects people, cars and
+furniture constantly, and counting them as waste would corrupt every metric on
+the dashboard.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+pytest              # 66 tests, no weights or network needed
+ruff check .
+ruff format .
+```
+
+The suite drives the whole pipeline through a `StubDetector`, so routing,
+metrics and rendering are all testable without torch or a model download. CI
+runs the same three commands.
+
+## Project layout
+
+```
+app.py                  Streamlit UI (presentation only)
+recyclevision/
+  models.py             Domain types: Detection, Bin, RoutedItem, SortResult
+  detector.py           Detector protocol, YOLO implementation, test stub
+  policy.py             Policy loading, validation, and routing
+  pipeline.py           Detect, then route
+  render.py             Bin-coloured annotation
+  weights.py            Custom weights if present, stock if not
+  __main__.py           CLI entry point
+policies/household.yaml Routing rules
+tests/                  Weight-free test suite
+```
+
+## Tech stack
+
+Python · Streamlit · Ultralytics YOLO · PyTorch · Pillow
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md). Next up: session metrics and impact accounting,
+then video with object tracking and a virtual count line — the conveyor-belt
+demo this is all building towards.
+
+## License
+
+MIT
