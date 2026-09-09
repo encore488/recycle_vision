@@ -154,3 +154,48 @@ class TestShippedRules:
             item = policy.route(make_detection(label))
             assert item is not None
             assert item.handling or item.rationale, label
+
+
+class TestShippedPolicySet:
+    """Every policy in policies/ must load, and they must differ meaningfully."""
+
+    @pytest.fixture
+    def policy_paths(self):
+        from recyclevision.pipeline import DEFAULT_POLICY
+
+        return sorted(DEFAULT_POLICY.parent.glob("*.yaml"))
+
+    def test_all_shipped_policies_load(self, policy_paths):
+        assert policy_paths, "expected at least one shipped policy"
+        for path in policy_paths:
+            assert RoutingPolicy.load(path).bins, path
+
+    def test_policy_names_are_unique(self, policy_paths):
+        names = [RoutingPolicy.load(p).name for p in policy_paths]
+        assert len(names) == len(set(names))
+
+    def test_context_changes_the_destination(self, policy_paths):
+        """The whole point of policies as data.
+
+        A "cup" in a kitchen is tableware and goes to landfill. On a sorting
+        line it is a can, and belongs with the containers. Same detector,
+        same label, different answer.
+        """
+        by_name = {RoutingPolicy.load(p).name: RoutingPolicy.load(p) for p in policy_paths}
+        household = by_name["Household Single-Stream"]
+        mrf = by_name["MRF Sorting Line"]
+
+        detection = make_detection("cup")
+        home_route = household.route(detection)
+        line_route = mrf.route(detection)
+
+        assert home_route is not None and line_route is not None
+        assert home_route.bin.key != line_route.bin.key
+        assert not home_route.bin.diverted
+        assert line_route.bin.diverted
+
+    def test_every_policy_ignores_non_waste(self, policy_paths):
+        for path in policy_paths:
+            policy = RoutingPolicy.load(path)
+            for label in ("person", "car", "dog"):
+                assert policy.route(make_detection(label)) is None, f"{path.name}: {label}"

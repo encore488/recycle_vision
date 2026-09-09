@@ -191,20 +191,31 @@ def _cmd_score(args: argparse.Namespace) -> int:
     counts = Counter(r["verdict"] for r in graded)
     total = len(graded)
 
-    real = total - counts["false_positive"]
+    # "unsure" means the grader could not tell, so it is evidence of nothing.
+    # Counting it as a real object would silently assert the box was good.
+    scored = total - counts["unsure"]
+    real = scored - counts["false_positive"]
+
     print(f"Graded {total} detection(s)" + (f" ({ungraded} still ungraded)" if ungraded else ""))
     print()
     for verdict in VERDICTS:
         if counts[verdict]:
             print(f"  {verdict:16} {counts[verdict]:3}  {counts[verdict] / total:5.0%}")
     print()
+
+    if not scored:
+        print("  every detection was graded 'unsure' -- nothing to score")
+        return 0
+
     # Detection precision and routing accuracy fail for different reasons and
     # are fixed in different places, so they are never combined into one score.
-    print(f"  detection precision  {real / total:5.0%}   (boxes that are on a real object)")
+    print(f"  detection precision  {real / scored:5.0%}   (boxes that are on a real object)")
     if real:
         routing = counts["correct"] / real
         print(f"  routing accuracy     {routing:5.0%}   (correct bin, of real objects)")
-    print(f"  end-to-end correct   {counts['correct'] / total:5.0%}")
+    print(f"  end-to-end correct   {counts['correct'] / scored:5.0%}")
+    if counts["unsure"]:
+        print(f"  ({counts['unsure']} unsure detection(s) excluded from the rates above)")
 
     confusions = Counter(
         (r["detected_as"], r.get("actually_is") or "?")

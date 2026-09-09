@@ -60,6 +60,7 @@ class TestVerdictStub:
 
 class TestScoring:
     def _write(self, tmp_path, verdicts):
+        tmp_path.mkdir(parents=True, exist_ok=True)
         path = tmp_path / "verdicts.json"
         path.write_text(
             json.dumps(
@@ -103,6 +104,27 @@ class TestScoring:
         path = self._write(tmp_path, [UNGRADED, UNGRADED])
         assert main(["score", str(path)]) == 1
         assert "Nothing graded yet" in capsys.readouterr().out
+
+    def test_unsure_is_excluded_from_the_rates(self, tmp_path, capsys):
+        """An unsure grade is evidence of nothing and must not pad a denominator."""
+        both = self._write(tmp_path / "a", ["correct", "false_positive"])
+        (tmp_path / "a").mkdir(exist_ok=True)
+        main(["score", str(both)])
+        without = capsys.readouterr().out
+
+        plus = self._write(tmp_path / "b", ["correct", "false_positive", "unsure"])
+        (tmp_path / "b").mkdir(exist_ok=True)
+        main(["score", str(plus)])
+        with_unsure = capsys.readouterr().out
+
+        assert "detection precision    50%" in without
+        assert "detection precision    50%" in with_unsure
+        assert "1 unsure detection(s) excluded" in with_unsure
+
+    def test_all_unsure_scores_nothing(self, tmp_path, capsys):
+        path = self._write(tmp_path, ["unsure", "unsure"])
+        assert main(["score", str(path)]) == 0
+        assert "nothing to score" in capsys.readouterr().out
 
     def test_partially_graded_file_says_how_many_remain(self, tmp_path, capsys):
         path = self._write(tmp_path, ["correct", UNGRADED])

@@ -12,11 +12,12 @@ from pathlib import Path
 import streamlit as st
 from PIL import Image
 
-from recyclevision import SortingPipeline, annotate
+from recyclevision import RoutingPolicy, SortingPipeline, annotate
 from recyclevision.policy import PolicyError
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_DIR = PROJECT_ROOT / "images"
+POLICY_DIR = PROJECT_ROOT / "policies"
 
 st.set_page_config(page_title="RecycleVision AI", page_icon="♻️", layout="wide")
 
@@ -27,13 +28,39 @@ st.set_page_config(page_title="RecycleVision AI", page_icon="♻️", layout="wi
 
 
 @st.cache_resource(show_spinner="Loading model…")
-def load_pipeline() -> SortingPipeline:
-    return SortingPipeline.build()
+def load_detector():
+    """Loaded once. Swapping policy must not re-pay for the model."""
+    from recyclevision.detector import YoloDetector
+
+    return YoloDetector()
+
+
+@st.cache_resource(show_spinner=False)
+def load_policy(path: str) -> RoutingPolicy:
+    return RoutingPolicy.load(path)
+
+
+@st.cache_resource(show_spinner=False)
+def discover_policies() -> list[tuple[Path, str]]:
+    """Every policy on disk, paired with its declared name.
+
+    The picker shows the name from inside the file rather than a prettified
+    filename: "MRF Sorting Line" beats "Mrf Conveyor".
+    """
+    found = []
+    for path in sorted(POLICY_DIR.glob("*.yaml")):
+        try:
+            found.append((path, RoutingPolicy.load(path).name))
+        except PolicyError:
+            # A broken policy should not take the whole app down; it simply
+            # does not appear in the picker.
+            continue
+    return found
 
 
 @st.cache_data(show_spinner=False)
-def sort_image(_pipeline: SortingPipeline, image_bytes: bytes, confidence: float):
-    """Run the pipeline, keyed on the image and threshold.
+def sort_image(_pipeline: SortingPipeline, image_bytes: bytes, policy_path: str, confidence: float):
+    """Run the pipeline, keyed on the image, policy and threshold.
 
     Cached so that flipping a display toggle re-renders the annotation
     without paying for inference again.
@@ -42,18 +69,20 @@ def sort_image(_pipeline: SortingPipeline, image_bytes: bytes, confidence: float
     return image, _pipeline.sort(image, confidence=confidence)
 
 
-try:
-    pipeline = load_pipeline()
-except (PolicyError, FileNotFoundError) as exc:
-    st.error(f"Could not start: {exc}")
+policies = discover_policies()
+if not policies:
+    st.error(f"No usable routing policies found in {POLICY_DIR}.")
     st.stop()
+policy_names = dict(policies)
+
+try:
+    detector = load_detector()
 except Exception as exc:  # noqa: BLE001 - surface anything to the user, not the logs
     st.error(f"Could not load the detection model: {exc}")
     st.info("Check your network connection -- the stock model downloads on first run.")
     st.stop()
 
-policy = pipeline.policy
-weights = pipeline.detector.weights
+weights = detector.weights
 
 
 # --------------------------------------------------------------------------
@@ -87,13 +116,28 @@ with st.sidebar:
         st.caption(weights.caveat)
 
     st.subheader("Policy")
-    st.info(policy.name)
+    policy_path = st.selectbox(
+        "Routing rules",
+        options=[path for path, _ in policies],
+        format_func=lambda p: policy_names[p],
+        help="Local recycling rules. Same detector, different destinations.",
+        label_visibility="collapsed",
+    )
+
+    try:
+        policy = load_policy(str(policy_path))
+    except PolicyError as exc:
+        st.error(f"{policy_path.name}: {exc}")
+        st.stop()
+
     st.caption(policy.description)
 
     with st.expander("Bins in this policy"):
         for bin_ in policy.bins:
             st.markdown(f"**{bin_.name}**")
             st.caption(bin_.description)
+
+pipeline = SortingPipeline(detector, policy)
 
 
 # --------------------------------------------------------------------------
@@ -171,7 +215,7 @@ def render_bin_card(bin_, items) -> None:
 
 if image_bytes is not None:
     with st.spinner("Analysing…"):
-        image, result = sort_image(pipeline, image_bytes, confidence)
+        image, result = sort_image(pipeline, image_bytes, str(policy_path), confidence)
         annotated = annotate(
             image,
             result,

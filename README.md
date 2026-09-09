@@ -135,30 +135,49 @@ Verdicts separate the two failure modes, because they have different fixes:
 | `false_positive` | Box is not on an object at all | Detector |
 | `unsure` | Cannot tell from the image | — |
 
-### Current scores (stock YOLOv8s, 9 detections over the 2 sample images)
+### Current scores
 
-```
-  detection precision    78%   (boxes that are on a real object)
-  routing accuracy       29%   (correct bin, of real objects)
-  end-to-end correct     22%
+Nine detections over the two sample images, graded by hand and confirmed by the
+repo owner (`qa/verdicts.json`, `qa/verdicts_mrf.json`):
 
-  misreadings driving wrong bins:
-    'bowl' is really 'metal can lid'      x1
-    'cup'  is really 'steel food can'     x1
-    'cup'  is really 'aluminium drink can' x1
-```
+| | Household policy | MRF policy |
+| --- | --- | --- |
+| Detection precision | 75% | 75% |
+| Routing accuracy | 33% | **83%** |
+| End-to-end correct | 25% | **62%** |
 
-Nine detections is a small sample, but the pattern is unambiguous: **every
-wrong bin is a metal container misread as "cup" or "bowl"**, because COCO has
-no class for a can. Two false positives sat on an empty seam in the conveyor
-belt. This is the measured case for training a purpose-built model.
+**Same model, same images, same detections — only the policy file changed.**
+Detection precision is identical because the detector never changed; routing
+accuracy tripled because the MRF policy knows there is no tableware on a
+sorting line, so a "cup" is a can. That is what routing-rules-as-data buys.
 
-One result is worth calling out the other way. In the second sample a drinking
-glass was detected as `cup` — the wrong class, but both route to landfill, so
-the bin was still right. Bin-first routing absorbs misreads that never change
-the destination, and only surfaces the ones that do.
+The remaining errors split cleanly by cause:
+
+- **Two false positives** on an empty seam in the conveyor belt. Only a better
+  detector fixes those.
+- **One wrong bin under the MRF policy**: a drinking glass, which the household
+  policy gets right and the MRF policy does not. The two policies genuinely
+  disagree here and one of them has to be wrong, because COCO cannot tell a
+  drinking glass from a can.
+
+Nine detections is a small sample and the MRF policy was written after seeing
+these images, so treat 83% as a ceiling rather than an expectation. The point
+is the mechanism, not the number. Re-measure on new footage before trusting it.
+
+One result is worth calling out the other way: in the second sample a drinking
+glass was detected as `cup` — the wrong class, but under the household policy
+both route to landfill, so the bin was still right. Bin-first routing absorbs
+misreads that never change the destination, and only surfaces the ones that do.
 
 ## Writing a policy
+
+Two policies ship, and they disagree on purpose:
+
+| | `household.yaml` | `mrf_conveyor.yaml` |
+| --- | --- | --- |
+| Context | A kitchen | A sorting line |
+| Bins | Recycling / Organics / Reuse / Special / Landfill | Containers / Fibre / Organics / Residue |
+| A detected `cup` | Landfill — it is a lined disposable cup | Containers — there is no tableware on a belt |
 
 A policy maps detector class names onto bins. Only `bin` is required:
 

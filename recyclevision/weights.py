@@ -44,18 +44,20 @@ class WeightsChoice:
         Stock weights were trained on COCO, whose 80 classes describe
         everyday objects rather than waste. The gap is not subtle: COCO has
         no class for a drink can -- the single most common item in a real
-        recycling stream -- so cans get reported as "cup" or "bowl" and
-        routed accordingly. That is exactly the case for training a
-        purpose-built model, and exactly why this caveat is shown rather
-        than buried.
+        recycling stream -- so cans arrive labelled "cup" or "bowl". A
+        context-aware policy can absorb some of that (see the MRF policy),
+        but no rule file recovers information the model never had. That is
+        the case for training a purpose-built model, and why this caveat is
+        shown rather than buried.
         """
         if self.is_custom:
             return ""
         return (
-            "Running on stock COCO weights, not a waste-trained model. COCO "
-            "has no class for a drink can, so cans are misread as cups or "
-            "bowls and routed wrongly. Low-certainty routes are flagged for "
-            "review below. Treat results as indicative, not accurate."
+            "Running on stock COCO weights, not a waste-trained model. COCO's "
+            "vocabulary is everyday objects and has no class for a drink can, "
+            "so containers arrive labelled 'cup' or 'bowl'. A routing policy "
+            "can compensate for that where it knows the context, but it cannot "
+            "recover what the model never saw. Treat results as indicative."
         )
 
 

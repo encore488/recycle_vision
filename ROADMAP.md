@@ -142,15 +142,20 @@ useful thing in this milestone:
 `recyclevision.qa` was built to grade detections tile by tile, and the first graded run
 (9 detections over the 2 sample images, `qa/verdicts.json`) gives:
 
-| Metric | Stock YOLOv8s |
-| --- | --- |
-| Detection precision | 78% |
-| Routing accuracy (of real objects) | 29% |
-| End-to-end correct | 22% |
+| Metric | Household policy | MRF policy |
+| --- | --- | --- |
+| Detection precision | 75% | 75% |
+| Routing accuracy (of real objects) | 33% | **83%** |
+| End-to-end correct | 25% | **62%** |
 
-Every wrong bin is a metal container read as "cup" or "bowl". Two false positives sat on
-an empty belt seam. Small sample, unambiguous pattern — this is the number Milestone 4
-has to beat, and the reason it exists.
+Same model, same detections; only the policy file changed. Detection precision is
+identical because the detector is untouched — the gain is entirely from context.
+
+Remaining errors: two false positives on an empty belt seam (only a better detector
+fixes those), and a drinking glass the MRF policy sends to containers. Nine detections
+is a small sample and the MRF policy was written after seeing these images, so 83% is a
+ceiling, not an expectation. **Detection precision — 75% — is the number Milestone 4 has
+to beat, and no policy file can move it.**
 
 ## Milestone 2 — "It's quantified"
 
@@ -161,9 +166,11 @@ Make the routing decisions measurable and exportable.
       using published EPA WARM factors. Grounded in real, cited figures — never invented.
 - [ ] Per-detection table with bbox geometry; CSV/JSON export; batch mode over N images with
       an aggregate report.
-- [ ] A second policy file (a real municipality's rules) to prove the abstraction holds, plus
-      a policy picker in the UI.
-- [ ] Policy schema validation with helpful errors, so a hand-edited YAML fails loudly.
+- [x] A second policy file (`mrf_conveyor.yaml`) to prove the abstraction holds, plus a
+      policy picker in the UI. Done early: QA showed context, not code, was the biggest
+      available accuracy win.
+- [x] Policy schema validation with helpful errors, so a hand-edited YAML fails loudly.
+- [ ] A real municipality's published rules as a third policy.
 
 ## Milestone 3 — "It's real"
 
