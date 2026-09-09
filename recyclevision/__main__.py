@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("images", nargs="+", type=Path, help="image files to sort")
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY, help="routing policy YAML")
     parser.add_argument("--weights", type=Path, default=None, help="model weights (.pt)")
-    parser.add_argument("--confidence", type=float, default=0.25, help="detection threshold")
+    parser.add_argument("--confidence", type=float, default=0.15, help="detection threshold")
     parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
     parser.add_argument(
         "--save-annotated", type=Path, default=None, help="directory to write annotated images to"

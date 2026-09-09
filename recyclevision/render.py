@@ -21,6 +21,15 @@ LABEL_PADDING = 4
 #: Below this, a fitted label is wider than the box it belongs to and reads
 #: better tucked just outside the corner instead.
 MIN_BOX_WIDTH_FOR_LABEL = 40
+#: Vertical gap left between two label chips that would otherwise collide.
+LABEL_GAP = 2
+#: How many times to nudge a colliding chip before giving up and letting it
+#: overlap. Cluttered images hit this, and an unbounded search would not
+#: terminate usefully anyway.
+MAX_LABEL_NUDGES = 14
+
+#: (x0, y0, x1, y1) in pixel coordinates.
+Rect = tuple[float, float, float, float]
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
@@ -56,6 +65,36 @@ def _load_font(image_width: int) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
+def _overlaps(a: Rect, b: Rect) -> bool:
+    return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
+
+
+def _find_label_slot(
+    x: float,
+    preferred_y: float,
+    width: float,
+    height: float,
+    taken: list[Rect],
+    canvas_height: int,
+) -> Rect:
+    """Find somewhere for a label chip that nothing else already occupies.
+
+    A conveyor belt is a cluttered image: boxes sit close together, and chips
+    drawn at their preferred position overprint each other into unreadable
+    mush. Nudging downwards keeps every label legible and still adjacent to
+    the box it belongs to.
+    """
+    y = preferred_y
+    for _ in range(MAX_LABEL_NUDGES):
+        candidate = (x, y, x + width, y + height)
+        if not any(_overlaps(candidate, t) for t in taken):
+            return candidate
+        y += height + LABEL_GAP
+        if y + height > canvas_height:
+            break
+    return (x, preferred_y, x + width, preferred_y + height)
+
+
 def annotate(
     image: Image.Image,
     result: SortResult,
@@ -71,15 +110,24 @@ def annotate(
     draw = ImageDraw.Draw(canvas)
     font = _load_font(canvas.width)
 
+    # Boxes first, labels second: a box drawn later would otherwise cut
+    # through a chip already placed for a neighbouring item.
+    if show_boxes:
+        for item in result.items:
+            box = item.detection.box
+            draw.rectangle(
+                [box.x1, box.y1, box.x2, box.y2],
+                outline=_hex_to_rgb(item.bin.color),
+                width=BOX_WIDTH,
+            )
+
+    if not show_labels:
+        return canvas
+
+    taken: list[Rect] = []
     for item in result.items:
         color = _hex_to_rgb(item.bin.color)
         box = item.detection.box
-
-        if show_boxes:
-            draw.rectangle([box.x1, box.y1, box.x2, box.y2], outline=color, width=BOX_WIDTH)
-
-        if not show_labels:
-            continue
 
         text = item.bin.name
         if show_confidence:
@@ -88,20 +136,22 @@ def annotate(
             text = f"{text}  ?"
 
         left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-        text_w, text_h = right - left, bottom - top
-        chip_w = text_w + 2 * LABEL_PADDING
-        chip_h = text_h + 2 * LABEL_PADDING
+        chip_w = (right - left) + 2 * LABEL_PADDING
+        chip_h = (bottom - top) + 2 * LABEL_PADDING
+
+        chip_x = box.x1 if box.width >= MIN_BOX_WIDTH_FOR_LABEL else box.x1 - chip_w / 2
+        chip_x = max(0.0, min(chip_x, canvas.width - chip_w))
 
         # Prefer sitting the chip above the box; drop it inside when the box
         # is already at the top edge, so labels never render off-canvas.
-        chip_x = box.x1 if box.width >= MIN_BOX_WIDTH_FOR_LABEL else max(0, box.x1 - chip_w / 2)
-        chip_x = min(chip_x, canvas.width - chip_w)
-        chip_x = max(0, chip_x)
-        chip_y = box.y1 - chip_h if box.y1 - chip_h >= 0 else box.y1
+        preferred_y = box.y1 - chip_h if box.y1 - chip_h >= 0 else box.y1
 
-        draw.rectangle([chip_x, chip_y, chip_x + chip_w, chip_y + chip_h], fill=color)
+        x0, y0, x1, y1 = _find_label_slot(chip_x, preferred_y, chip_w, chip_h, taken, canvas.height)
+        taken.append((x0, y0, x1, y1))
+
+        draw.rectangle([x0, y0, x1, y1], fill=color)
         draw.text(
-            (chip_x + LABEL_PADDING - left, chip_y + LABEL_PADDING - top),
+            (x0 + LABEL_PADDING - left, y0 + LABEL_PADDING - top),
             text,
             fill=_readable_text_color(color),
             font=font,

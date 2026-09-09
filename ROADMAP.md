@@ -3,7 +3,8 @@
 Working plan for taking RecycleVision from prototype to a demo-able, resume-ready,
 and eventually genuinely useful tool.
 
-**Status:** v0.3 — rebuilt around bin routing. Runs on stock YOLO weights.
+**Status:** v0.3 — rebuilt around bin routing. Runs on stock YOLOv8s weights,
+verified end-to-end through both the CLI and the Streamlit UI.
 
 ## The product, in one sentence
 
@@ -89,35 +90,48 @@ The v0.2 code was a Streamlit UI calling a YOLO wrapper, with material logic har
 
 ---
 
-## Milestone 1 — "It runs, and it routes"  ← in progress
+## Milestone 1 — "It runs, and it routes"  ← all but deployment done
 
-A stranger can clone it, run it, and get a correct, explained bin decision.
+A stranger can clone it, run it, and get an explained bin decision.
 
-- [ ] `recyclevision/` package: `Detector` protocol + `YoloDetector`, `RoutingPolicy`,
+- [x] `recyclevision/` package: `Detector` protocol + `YoloDetector`, `RoutingPolicy`,
       `SortingPipeline`, dataclass domain models.
-- [ ] `policies/household.yaml` — COCO classes → bins, with handling notes, certainty flags,
+- [x] `policies/household.yaml` — 40 rules over 5 bins, with handling notes, certainty flags,
       and explicit non-waste ignores.
-- [ ] Model bootstrap: prefer `models/best_model.pt`; auto-download stock `yolov8n.pt` if
-      absent; banner clearly stating which model is live.
-- [ ] Bin-coloured annotation rendered in RGB via PIL — fixes the v0.2 BGR/RGB channel swap
+- [x] Model bootstrap: prefer `models/best_model.pt`; auto-download stock weights if absent;
+      banner clearly stating which model is live and what it cannot do.
+- [x] Bin-coloured annotation rendered in RGB via PIL — fixes the v0.2 BGR/RGB channel swap
       by not round-tripping through `result.plot()` at all, and colours each box by
-      *destination* rather than by class.
-- [ ] Sidebar controls that actually do something (the v0.2 toggles were wired to nothing).
-- [ ] `app.py` rewritten: bin cards, diversion rate, per-item explanations, review queue.
-- [ ] Headless CLI (`python -m recyclevision`) so the pipeline is testable and scriptable
-      without Streamlit.
-- [ ] `pytest` suite with a stub detector — full pipeline coverage with no weights, no
-      network, no torch.
-- [ ] `requirements.txt` rewritten as UTF-8 with direct dependencies only (v0.2's was UTF-16
-      and a 62-line `pip freeze`); `requirements-dev.txt` split out.
-- [ ] `README.txt` → `README.md` (v0.2's had an unclosed code fence swallowing half the doc
-      and the wrong repo name).
-- [ ] GitHub Actions: ruff + pytest.
-- [ ] **Deploy to Streamlit Community Cloud or Hugging Face Spaces.**
+      *destination* rather than by class. Label chips de-collide so crowded conveyor images
+      stay readable.
+- [x] Sidebar controls that actually do something (the v0.2 toggles were wired to nothing).
+- [x] `app.py` rewritten: bin cards, diversion and contamination rates, per-item
+      explanations, review queue, sample images so a visitor needs no photo of their own.
+- [x] Headless CLI (`python -m recyclevision`) with text and JSON output.
+- [x] 80-test suite driven through a stub detector — no weights, no network, no torch.
+- [x] `requirements.txt` rewritten as UTF-8 with direct dependencies only; `requirements-dev.txt`
+      split out; `packages.txt` for the Streamlit Cloud system libraries.
+- [x] `README.txt` → `README.md`, with a screenshot.
+- [x] GitHub Actions: ruff check, ruff format, pytest.
+- [ ] **Deploy to Streamlit Community Cloud or Hugging Face Spaces.** ← needs your account
 
 > A live URL in the README is worth more than any single feature on this list.
 
 **Done when:** clean-machine clone runs, CI is green, README links a working hosted demo.
+
+### What running it revealed
+
+Verified end-to-end against the real sample images, which turned out to be the most
+useful thing in this milestone:
+
+- **Stock `yolov8n` is useless here** — zero detections at a sane threshold on the
+  conveyor photo. Switched the stock default to `yolov8s`, which finds six items in
+  ~70ms on CPU. `yolov8m` adds roughly one item for 2.3x the download.
+- **COCO has no class for a drink can.** On a belt full of steel cans, the model reports
+  "bowl", "cup" and "cutlery", and the policy dutifully routes them to landfill — wrongly.
+  This is the single most concrete argument for Milestone 4, and the app now says so on
+  every screen rather than reporting a confident wrong answer.
+- Default confidence lowered from 0.25 to 0.15 on that evidence.
 
 ## Milestone 2 — "It's quantified"
 

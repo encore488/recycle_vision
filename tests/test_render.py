@@ -12,7 +12,13 @@ from PIL import Image
 
 from recyclevision.detector import StubDetector
 from recyclevision.pipeline import SortingPipeline
-from recyclevision.render import _hex_to_rgb, _readable_text_color, annotate
+from recyclevision.render import (
+    _find_label_slot,
+    _hex_to_rgb,
+    _overlaps,
+    _readable_text_color,
+    annotate,
+)
 from tests.conftest import make_detection
 
 
@@ -42,6 +48,46 @@ class TestColorHelpers:
     def test_text_color_stays_legible(self):
         assert _readable_text_color((255, 255, 255)) == (0, 0, 0)
         assert _readable_text_color((0, 0, 0)) == (255, 255, 255)
+
+
+class TestLabelPlacement:
+    """Conveyor images are cluttered; overlapping chips render as mush."""
+
+    def test_overlap_detection(self):
+        assert _overlaps((0, 0, 10, 10), (5, 5, 15, 15))
+        assert not _overlaps((0, 0, 10, 10), (10, 0, 20, 10))  # touching, not overlapping
+        assert not _overlaps((0, 0, 10, 10), (0, 20, 10, 30))
+
+    def test_free_slot_is_the_preferred_one(self):
+        assert _find_label_slot(10, 20, 100, 15, [], 480) == (10, 20, 110, 35)
+
+    def test_colliding_chip_is_nudged_clear(self):
+        taken = [(10, 20, 110, 35)]
+        slot = _find_label_slot(10, 20, 100, 15, taken, 480)
+        assert not _overlaps(slot, taken[0])
+        assert slot[1] > 20, "should move down, not up"
+
+    def test_many_collisions_all_resolve(self):
+        taken: list[tuple[float, float, float, float]] = []
+        for _ in range(6):
+            slot = _find_label_slot(10, 20, 100, 15, taken, 480)
+            assert all(not _overlaps(slot, t) for t in taken)
+            taken.append(slot)
+
+    def test_gives_up_rather_than_running_off_canvas(self):
+        """A tiny canvas cannot fit the nudges; it must still terminate."""
+        taken = [(0, 0, 100, 15)]
+        slot = _find_label_slot(0, 0, 100, 15, taken, 20)
+        assert slot == (0, 0, 100, 15)
+
+    def test_labels_do_not_overprint_in_a_crowded_image(self, policy, image):
+        """Six items stacked in the same corner, as on a real conveyor."""
+        detections = [
+            make_detection("bottle", 0.9 - i * 0.05, box=(20 + i * 4, 100 + i * 4, 160, 240))
+            for i in range(6)
+        ]
+        out = annotate(image, sort(policy, detections, image))
+        assert out.size == image.size
 
 
 class TestAnnotate:

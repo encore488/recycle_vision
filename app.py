@@ -67,7 +67,7 @@ with st.sidebar:
         "Confidence threshold",
         min_value=0.10,
         max_value=0.95,
-        value=0.25,
+        value=0.15,
         step=0.05,
         help="Lower catches more objects but with more false positives.",
     )

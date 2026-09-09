@@ -6,6 +6,8 @@ RecycleVision is a computer vision system for waste sorting. The long-term goal 
 real-time perception for recycling conveyor belts, and eventually for automated
 robotic sorting.
 
+![RecycleVision AI](docs/screenshot.png)
+
 > **Status:** v0.3, early but working. Runs on stock COCO weights while a
 > waste-specific model is trained — see [ROADMAP.md](ROADMAP.md).
 
@@ -63,7 +65,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-No model download step: if `models/best_model.pt` is absent, stock `yolov8n.pt`
+No model download step: if `models/best_model.pt` is absent, stock `yolov8s.pt`
 is fetched automatically on first run and the UI says clearly that it is running
 in demo mode. Sample images are included, so you can try it without a photo of
 your own.
@@ -80,18 +82,36 @@ python -m recyclevision images/recycl_test.jpg --save-annotated out/
 
 ```
 images/recycl_test.jpg
-  model  YOLOv8n (COCO)
+  model  YOLOv8s (COCO)
   policy Household Single-Stream
-  3 item(s), 67% diverted from landfill
+  6 item(s), 33% diverted from landfill
 
   Mixed Recycling (2)
-    - Beverage bottle  91%
+    - Beverage bottle  72%
+        Empty and rinse. Leave the cap screwed on.
+    - Beverage bottle  16%
         Empty and rinse. Leave the cap screwed on.
 
-  Landfill (1)
-    - Cup  44%  [review]
+  Landfill (4)
+    - Bowl  61%  [review]
+        Scrape food residue into the organics bin first.
+    - Cutlery  56%  [review]
+        Metal cutlery should be kept, donated, or taken to scrap.
+    - Cup  30%  [review]
         If it is a ceramic mug, keep or donate it instead.
+    - Cutlery  18%  [review]
+        Metal cutlery should be kept, donated, or taken to scrap.
 ```
+
+Those `[review]` flags are the system working, not failing. The sample is a
+photo of a real conveyor belt carrying steel cans — and **COCO has no class
+for a can**, so the model reports them as "bowl", "cup" and "cutlery", which
+the policy routes to landfill. Wrongly.
+
+That is a limitation of the detector, not the routing, and it is the clearest
+possible argument for training a purpose-built model — the next major
+milestone. Until then the app says so on every screen rather than quietly
+reporting a confident wrong answer.
 
 ## Writing a policy
 
@@ -141,7 +161,7 @@ start is slower than subsequent ones.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest              # 66 tests, no weights or network needed
+pytest              # 80 tests, no weights or network needed
 ruff check .
 ruff format .
 ```

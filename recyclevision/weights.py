@@ -20,8 +20,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CUSTOM_WEIGHTS = PROJECT_ROOT / "models" / "best_model.pt"
 
 #: Ultralytics resolves a bare name like this by downloading it on first use
-#: and caching it. Small and CPU-friendly, which matters for a hosted demo.
-STOCK_WEIGHTS = "yolov8n.pt"
+#: and caching it. `s` rather than `n`: on the conveyor sample images, `n`
+#: finds nothing at all at a sane threshold while `s` finds six items in
+#: ~70ms on CPU. `m` adds ~1 item for 2.3x the download and slower inference.
+STOCK_WEIGHTS = "yolov8s.pt"
 
 
 @dataclass(frozen=True)
@@ -33,24 +35,27 @@ class WeightsChoice:
 
     @property
     def display_name(self) -> str:
-        return Path(self.path).stem if self.is_custom else "YOLOv8n (COCO)"
+        return Path(self.path).stem if self.is_custom else "YOLOv8s (COCO)"
 
     @property
     def caveat(self) -> str:
         """A user-facing warning, or empty when the custom model is loaded.
 
-        Stock weights were trained on COCO, which has no notion of waste
-        material. They detect "bottle" and "wine glass" perfectly well, and
-        the routing policy translates those into bins -- but the vocabulary
-        is a general-purpose one, so accuracy on a real waste stream is not
-        what a purpose-trained model would give.
+        Stock weights were trained on COCO, whose 80 classes describe
+        everyday objects rather than waste. The gap is not subtle: COCO has
+        no class for a drink can -- the single most common item in a real
+        recycling stream -- so cans get reported as "cup" or "bowl" and
+        routed accordingly. That is exactly the case for training a
+        purpose-built model, and exactly why this caveat is shown rather
+        than buried.
         """
         if self.is_custom:
             return ""
         return (
-            "Running on stock COCO weights, not a waste-trained model. "
-            "Detection is limited to COCO's 80 everyday-object classes, so "
-            "results are indicative rather than production-accurate."
+            "Running on stock COCO weights, not a waste-trained model. COCO "
+            "has no class for a drink can, so cans are misread as cups or "
+            "bowls and routed wrongly. Low-certainty routes are flagged for "
+            "review below. Treat results as indicative, not accurate."
         )
 
 
