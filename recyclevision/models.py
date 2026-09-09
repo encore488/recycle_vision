@@ -36,12 +36,28 @@ class Certainty(str, Enum):
 
 @dataclass(frozen=True)
 class BoundingBox:
-    """Axis-aligned box in pixel coordinates, origin top-left."""
+    """Axis-aligned box in pixel coordinates, origin top-left.
+
+    Corners are normalised on construction so that x1 <= x2 and y1 <= y2.
+    Detectors are not required to agree on corner order, and an inverted box
+    would otherwise reach the renderer -- where PIL raises -- or produce a
+    negative area. Normalising once here means nothing downstream has to
+    think about it.
+    """
 
     x1: float
     y1: float
     x2: float
     y2: float
+
+    def __post_init__(self) -> None:
+        # Frozen dataclass, so normalisation goes through object.__setattr__.
+        x1, x2 = sorted((self.x1, self.x2))
+        y1, y2 = sorted((self.y1, self.y2))
+        object.__setattr__(self, "x1", x1)
+        object.__setattr__(self, "x2", x2)
+        object.__setattr__(self, "y1", y1)
+        object.__setattr__(self, "y2", y2)
 
     @property
     def width(self) -> float:

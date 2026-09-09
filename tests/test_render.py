@@ -107,6 +107,12 @@ class TestAnnotate:
         result = sort(policy, [make_detection("bottle", box=(600, 200, 639, 300))], image)
         annotate(image, result, show_labels=True)  # must not raise
 
+    def test_inverted_box_does_not_crash_the_render(self, policy, image):
+        """BoundingBox normalises corners; this pins that the renderer benefits."""
+        result = sort(policy, [make_detection("bottle", box=(300, 200, 50, 40))], image)
+        out = annotate(image, result)
+        assert unique_colors(out) != {(255, 255, 255)}
+
     def test_handles_non_rgb_input(self, policy):
         grayscale = Image.new("L", (200, 200), 128)
         result = sort(policy, [make_detection("bottle", box=(10, 10, 100, 100))], grayscale)
