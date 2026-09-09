@@ -127,6 +127,16 @@ for a future model-assisted fallback.
 furniture constantly, and counting them as waste would corrupt every metric on
 the dashboard.
 
+## Deploying
+
+The app is deployable to Streamlit Community Cloud or Hugging Face Spaces as-is.
+`packages.txt` installs the system libraries `opencv-python` links against —
+without them the app dies at import with `libGL.so.1: cannot open shared object
+file`, which is invisible locally and immediate in deployment.
+
+Stock weights download on first request, so the first page load after a cold
+start is slower than subsequent ones.
+
 ## Development
 
 ```bash

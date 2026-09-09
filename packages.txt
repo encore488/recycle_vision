@@ -1,0 +1,8 @@
+# apt packages for Streamlit Community Cloud.
+#
+# ultralytics depends on opencv-python, which links against libGL and glib.
+# Neither is present in the default Streamlit Cloud image, so without these
+# the app dies at import with "ImportError: libGL.so.1: cannot open shared
+# object file". Harmless locally; required in deployment.
+libgl1
+libglib2.0-0
