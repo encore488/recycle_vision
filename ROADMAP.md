@@ -132,6 +132,25 @@ useful thing in this milestone:
   This is the single most concrete argument for Milestone 4, and the app now says so on
   every screen rather than reporting a confident wrong answer.
 - Default confidence lowered from 0.25 to 0.15 on that evidence.
+- **Grey "Landfill" boxes were invisible** against a dark conveyor belt, which read
+  as boxes being drawn on nothing. Every stroke now carries a dark halo, and displaced
+  label chips are tied back to their box with a leader line. An annotation that cannot
+  be trusted visually cannot be QA'd at all.
+
+### Measured baseline
+
+`recyclevision.qa` was built to grade detections tile by tile, and the first graded run
+(9 detections over the 2 sample images, `qa/verdicts.json`) gives:
+
+| Metric | Stock YOLOv8s |
+| --- | --- |
+| Detection precision | 78% |
+| Routing accuracy (of real objects) | 29% |
+| End-to-end correct | 22% |
+
+Every wrong bin is a metal container read as "cup" or "bowl". Two false positives sat on
+an empty belt seam. Small sample, unambiguous pattern — this is the number Milestone 4
+has to beat, and the reason it exists.
 
 ## Milestone 2 — "It's quantified"
 
@@ -165,6 +184,9 @@ per-bin tallies, good enough for a resume.
 Separates "used a model" from "understands ML". Gated on real data.
 
 - [ ] **Capture conveyor footage.** The blocking dependency for everything below.
+- [x] QA harness (`recyclevision.qa`): per-detection contact sheets, a hand-gradable
+      verdict file, and scoring that separates detector failures from policy failures.
+      Pulled forward from this milestone because it was needed to evaluate v0.3 at all.
 - [ ] Dataset + data card: sourcing, label taxonomy, class balance, splits, known biases.
       Public bootstraps: TACO, TrashNet, ZeroWaste.
 - [ ] Label taxonomy designed *backwards from the bins* — classes should be the distinctions

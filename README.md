@@ -113,6 +113,51 @@ possible argument for training a purpose-built model — the next major
 milestone. Until then the app says so on every screen rather than quietly
 reporting a confident wrong answer.
 
+## QA: grading the model
+
+Judging a detector from one cluttered annotated image does not work — boxes
+overlap, labels get displaced, and small false positives hide in the noise.
+`recyclevision.qa` cuts each detection into its own captioned tile so a person
+can grade them honestly:
+
+```bash
+python -m recyclevision.qa sheet images/*.jpg --out qa/
+# ...grade qa/verdicts.json by hand...
+python -m recyclevision.qa score qa/verdicts.json
+```
+
+Verdicts separate the two failure modes, because they have different fixes:
+
+| Verdict | Means | Fix |
+| --- | --- | --- |
+| `correct` | Right object, right bin | — |
+| `wrong_bin` | Real object, well localised, wrong destination | Detector or policy |
+| `false_positive` | Box is not on an object at all | Detector |
+| `unsure` | Cannot tell from the image | — |
+
+### Current scores (stock YOLOv8s, 9 detections over the 2 sample images)
+
+```
+  detection precision    78%   (boxes that are on a real object)
+  routing accuracy       29%   (correct bin, of real objects)
+  end-to-end correct     22%
+
+  misreadings driving wrong bins:
+    'bowl' is really 'metal can lid'      x1
+    'cup'  is really 'steel food can'     x1
+    'cup'  is really 'aluminium drink can' x1
+```
+
+Nine detections is a small sample, but the pattern is unambiguous: **every
+wrong bin is a metal container misread as "cup" or "bowl"**, because COCO has
+no class for a can. Two false positives sat on an empty seam in the conveyor
+belt. This is the measured case for training a purpose-built model.
+
+One result is worth calling out the other way. In the second sample a drinking
+glass was detected as `cup` — the wrong class, but both route to landfill, so
+the bin was still right. Bin-first routing absorbs misreads that never change
+the destination, and only surfaces the ones that do.
+
 ## Writing a policy
 
 A policy maps detector class names onto bins. Only `bin` is required:

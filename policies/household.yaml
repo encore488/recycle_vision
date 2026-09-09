@@ -56,7 +56,7 @@ bins:
 
   - key: landfill
     name: Landfill
-    color: "#6B7280"
+    color: "#9CA3AF"
     description: Not recoverable through any available stream.
     diverted: false
 

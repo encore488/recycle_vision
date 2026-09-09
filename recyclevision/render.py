@@ -27,6 +27,17 @@ LABEL_GAP = 2
 #: overlap. Cluttered images hit this, and an unbounded search would not
 #: terminate usefully anyway.
 MAX_LABEL_NUDGES = 14
+#: A chip displaced further than this from its box gets a leader line back to
+#: it. Without one, a nudged chip reads as belonging to whatever it landed on
+#: -- which makes the annotation actively misleading during review.
+LEADER_LINE_THRESHOLD = 6
+LEADER_WIDTH = 2
+#: Boxes are drawn over photographs, so a bin colour can land on a background
+#: of almost the same tone -- grey "Landfill" boxes on a dark conveyor belt
+#: were effectively invisible, which reads as the box being drawn on nothing.
+#: A dark halo behind every stroke guarantees an edge whatever is underneath.
+HALO_COLOR = (12, 12, 12)
+HALO_SPREAD = 2
 
 #: (x0, y0, x1, y1) in pixel coordinates.
 Rect = tuple[float, float, float, float]
@@ -116,6 +127,16 @@ def annotate(
         for item in result.items:
             box = item.detection.box
             draw.rectangle(
+                [
+                    box.x1 - HALO_SPREAD,
+                    box.y1 - HALO_SPREAD,
+                    box.x2 + HALO_SPREAD,
+                    box.y2 + HALO_SPREAD,
+                ],
+                outline=HALO_COLOR,
+                width=BOX_WIDTH + HALO_SPREAD * 2,
+            )
+            draw.rectangle(
                 [box.x1, box.y1, box.x2, box.y2],
                 outline=_hex_to_rgb(item.bin.color),
                 width=BOX_WIDTH,
@@ -148,6 +169,16 @@ def annotate(
 
         x0, y0, x1, y1 = _find_label_slot(chip_x, preferred_y, chip_w, chip_h, taken, canvas.height)
         taken.append((x0, y0, x1, y1))
+
+        # A chip that had to move is no longer visibly attached to its box.
+        # Tie it back, or the picture claims things it does not mean.
+        if (
+            abs(y0 - preferred_y) > LEADER_LINE_THRESHOLD
+            or abs(x0 - box.x1) > LEADER_LINE_THRESHOLD
+        ):
+            leader = [(x0 + LEADER_WIDTH, y1), (box.x1, box.y1)]
+            draw.line(leader, fill=HALO_COLOR, width=LEADER_WIDTH + HALO_SPREAD * 2)
+            draw.line(leader, fill=color, width=LEADER_WIDTH)
 
         draw.rectangle([x0, y0, x1, y1], fill=color)
         draw.text(

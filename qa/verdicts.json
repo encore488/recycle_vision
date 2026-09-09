@@ -1,0 +1,164 @@
+[
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 0,
+    "detected_as": "bottle",
+    "confidence": 0.72,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      293,
+      1,
+      376,
+      134
+    ],
+    "verdict": "correct",
+    "actually_is": "glass jar",
+    "should_be_bin": "recycling",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 1,
+    "detected_as": "bowl",
+    "confidence": 0.613,
+    "routed_to": "landfill",
+    "policy_certainty": "low",
+    "box": [
+      200,
+      220,
+      290,
+      278
+    ],
+    "verdict": "wrong_bin",
+    "actually_is": "metal can lid",
+    "should_be_bin": "recycling",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 2,
+    "detected_as": "spoon",
+    "confidence": 0.557,
+    "routed_to": "landfill",
+    "policy_certainty": "low",
+    "box": [
+      147,
+      247,
+      205,
+      364
+    ],
+    "verdict": "false_positive",
+    "actually_is": "empty conveyor belt",
+    "should_be_bin": "",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 3,
+    "detected_as": "cup",
+    "confidence": 0.298,
+    "routed_to": "landfill",
+    "policy_certainty": "low",
+    "box": [
+      650,
+      204,
+      746,
+      352
+    ],
+    "verdict": "wrong_bin",
+    "actually_is": "steel food can",
+    "should_be_bin": "recycling",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 4,
+    "detected_as": "spoon",
+    "confidence": 0.177,
+    "routed_to": "landfill",
+    "policy_certainty": "low",
+    "box": [
+      147,
+      272,
+      186,
+      364
+    ],
+    "verdict": "false_positive",
+    "actually_is": "empty conveyor belt",
+    "should_be_bin": "",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 5,
+    "detected_as": "bottle",
+    "confidence": 0.163,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      440,
+      1,
+      458,
+      35
+    ],
+    "verdict": "unsure",
+    "actually_is": "blurred background object",
+    "should_be_bin": "",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 0,
+    "detected_as": "cup",
+    "confidence": 0.711,
+    "routed_to": "landfill",
+    "policy_certainty": "low",
+    "box": [
+      734,
+      168,
+      1543,
+      986
+    ],
+    "verdict": "wrong_bin",
+    "actually_is": "aluminium drink can",
+    "should_be_bin": "recycling",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 1,
+    "detected_as": "cup",
+    "confidence": 0.705,
+    "routed_to": "landfill",
+    "policy_certainty": "low",
+    "box": [
+      1694,
+      450,
+      2499,
+      1187
+    ],
+    "verdict": "correct",
+    "actually_is": "drinking glass",
+    "should_be_bin": "landfill",
+    "graded_by": "claude (pending owner review)"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 2,
+    "detected_as": "bowl",
+    "confidence": 0.58,
+    "routed_to": "landfill",
+    "policy_certainty": "low",
+    "box": [
+      2823,
+      205,
+      3929,
+      1286
+    ],
+    "verdict": "unsure",
+    "actually_is": "paper or plastic tub",
+    "should_be_bin": "",
+    "graded_by": "claude (pending owner review)"
+  }
+]
