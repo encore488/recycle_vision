@@ -16,7 +16,13 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
+from .models import BoundingBox
 from .policy import RoutingPolicy
+
+#: Overlap at which a prediction is considered to be *about* a ground-truth
+#: object. Deliberately loose: this measures whether the right label reached
+#: the right object, not how tightly the box is drawn.
+DEFAULT_IOU = 0.45
 
 
 @dataclass
@@ -63,6 +69,74 @@ class RoutingScore:
             for (predicted, actual), count in self.harmless_confusions.most_common(5):
                 lines.append(f"  {predicted!r} predicted for {actual!r}  x{count}")
         return "\n".join(lines)
+
+
+def iou(a: BoundingBox, b: BoundingBox) -> float:
+    """Intersection over union of two boxes, 0.0 when they do not overlap."""
+    left = max(a.x1, b.x1)
+    top = max(a.y1, b.y1)
+    right = min(a.x2, b.x2)
+    bottom = min(a.y2, b.y2)
+    if right <= left or bottom <= top:
+        return 0.0
+
+    overlap = (right - left) * (bottom - top)
+    union = a.area + b.area - overlap
+    return overlap / union if union > 0 else 0.0
+
+
+@dataclass
+class MatchResult:
+    """Predictions paired with ground truth, plus what went unpaired."""
+
+    pairs: list[tuple[str, str]] = field(default_factory=list)
+    #: Predictions that matched no ground-truth object.
+    false_positives: list[str] = field(default_factory=list)
+    #: Ground-truth objects no prediction reached.
+    missed: list[str] = field(default_factory=list)
+
+    @property
+    def precision(self) -> float:
+        found = len(self.pairs) + len(self.false_positives)
+        return len(self.pairs) / found if found else 0.0
+
+    @property
+    def recall(self) -> float:
+        findable = len(self.pairs) + len(self.missed)
+        return len(self.pairs) / findable if findable else 0.0
+
+
+def match_detections(
+    predictions: list[tuple[str, BoundingBox, float]],
+    truth: list[tuple[str, BoundingBox]],
+    threshold: float = DEFAULT_IOU,
+) -> MatchResult:
+    """Greedily pair predictions to ground truth by overlap.
+
+    Highest-confidence predictions claim their object first, and each
+    ground-truth object is claimed once -- so two boxes on the same can count
+    as one match and one false positive, rather than both scoring.
+    """
+    result = MatchResult()
+    claimed: set[int] = set()
+
+    for label, box, _confidence in sorted(predictions, key=lambda p: -p[2]):
+        best_index, best_iou = None, threshold
+        for index, (_truth_label, truth_box) in enumerate(truth):
+            if index in claimed:
+                continue
+            overlap = iou(box, truth_box)
+            if overlap >= best_iou:
+                best_index, best_iou = index, overlap
+
+        if best_index is None:
+            result.false_positives.append(label)
+        else:
+            claimed.add(best_index)
+            result.pairs.append((label, truth[best_index][0]))
+
+    result.missed = [label for i, (label, _) in enumerate(truth) if i not in claimed]
+    return result
 
 
 def _bin_of(policy: RoutingPolicy, label: str) -> str | None:

@@ -59,3 +59,112 @@ class TestScoreRouting:
         report = score_routing(pairs, policy).report()
         assert "confusions that changed the bin" in report
         assert "confusions that did not matter" in report
+
+
+class TestIou:
+    def test_identical_boxes(self):
+        from recyclevision.evaluate import iou
+        from recyclevision.models import BoundingBox
+
+        assert iou(BoundingBox(0, 0, 10, 10), BoundingBox(0, 0, 10, 10)) == 1.0
+
+    def test_disjoint_boxes(self):
+        from recyclevision.evaluate import iou
+        from recyclevision.models import BoundingBox
+
+        assert iou(BoundingBox(0, 0, 10, 10), BoundingBox(20, 20, 30, 30)) == 0.0
+
+    def test_touching_edges_do_not_overlap(self):
+        from recyclevision.evaluate import iou
+        from recyclevision.models import BoundingBox
+
+        assert iou(BoundingBox(0, 0, 10, 10), BoundingBox(10, 0, 20, 10)) == 0.0
+
+    def test_partial_overlap(self):
+        import pytest
+
+        from recyclevision.evaluate import iou
+        from recyclevision.models import BoundingBox
+
+        assert iou(BoundingBox(0, 0, 10, 10), BoundingBox(5, 0, 15, 10)) == pytest.approx(1 / 3)
+
+    def test_degenerate_boxes_do_not_divide_by_zero(self):
+        from recyclevision.evaluate import iou
+        from recyclevision.models import BoundingBox
+
+        assert iou(BoundingBox(5, 5, 5, 5), BoundingBox(5, 5, 5, 5)) == 0.0
+
+
+class TestMatching:
+    def _box(self, *corners):
+        from recyclevision.models import BoundingBox
+
+        return BoundingBox(*corners)
+
+    def test_overlapping_prediction_matches_its_object(self):
+        from recyclevision.evaluate import match_detections
+
+        result = match_detections(
+            [("metal can", self._box(0, 0, 10, 10), 0.9)],
+            [("steel can", self._box(0, 0, 10, 10))],
+        )
+        assert result.pairs == [("metal can", "steel can")]
+        assert result.precision == 1.0 and result.recall == 1.0
+
+    def test_each_object_is_claimed_once(self):
+        """Two boxes on one can is one match and one false positive."""
+        from recyclevision.evaluate import match_detections
+
+        result = match_detections(
+            [
+                ("metal can", self._box(0, 0, 10, 10), 0.9),
+                ("metal can", self._box(1, 1, 11, 11), 0.5),
+            ],
+            [("steel can", self._box(0, 0, 10, 10))],
+        )
+        assert len(result.pairs) == 1
+        assert result.false_positives == ["metal can"]
+
+    def test_highest_confidence_prediction_claims_first(self):
+        from recyclevision.evaluate import match_detections
+
+        result = match_detections(
+            [
+                ("low", self._box(0, 0, 10, 10), 0.2),
+                ("high", self._box(0, 0, 10, 10), 0.9),
+            ],
+            [("truth", self._box(0, 0, 10, 10))],
+        )
+        assert result.pairs == [("high", "truth")]
+
+    def test_unmatched_prediction_is_a_false_positive(self):
+        from recyclevision.evaluate import match_detections
+
+        result = match_detections(
+            [("ghost", self._box(50, 50, 60, 60), 0.9)],
+            [("real", self._box(0, 0, 10, 10))],
+        )
+        assert result.pairs == []
+        assert result.false_positives == ["ghost"]
+        assert result.missed == ["real"]
+        assert result.precision == 0.0 and result.recall == 0.0
+
+    def test_no_predictions_means_everything_was_missed(self):
+        from recyclevision.evaluate import match_detections
+
+        result = match_detections([], [("a", self._box(0, 0, 5, 5))])
+        assert result.missed == ["a"]
+        assert result.recall == 0.0
+
+    def test_empty_inputs_do_not_divide_by_zero(self):
+        from recyclevision.evaluate import match_detections
+
+        result = match_detections([], [])
+        assert result.precision == 0.0 and result.recall == 0.0
+
+    def test_threshold_governs_what_counts_as_a_match(self):
+        from recyclevision.evaluate import match_detections
+
+        args = ([("p", self._box(5, 0, 15, 10), 0.9)], [("t", self._box(0, 0, 10, 10))])
+        assert match_detections(*args, threshold=0.9).pairs == []
+        assert match_detections(*args, threshold=0.3).pairs == [("p", "t")]

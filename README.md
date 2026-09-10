@@ -350,9 +350,29 @@ Confusing a drinking glass for a jar contaminates a batch. `scripts/evaluate.py`
 separates "confusions that changed the bin" from "confusions that did not", so
 effort goes where it changes an outcome.
 
-See **[docs/LABELLING.md](docs/LABELLING.md)** for how many frames to label, how
-long it takes, and what is worth correcting. Fill in
-[docs/DATA_CARD.md](docs/DATA_CARD.md) as you go.
+### Training on a public dataset
+
+Public waste datasets label *materials*; this project routes *bins* from
+*items*. A mapping file translates one to the other and records what the
+translation cannot express:
+
+```bash
+python scripts/import_dataset.py <external>/data.yaml     --mapping mappings/sortwaste.yaml --out datasets/sortwaste --link
+python scripts/zeroshot_eval.py --data datasets/sortwaste/data.yaml
+```
+
+An unmapped source class is an error, not a silent drop — discarding one would
+teach the model those objects are background. Nothing is written until the
+mapping is complete.
+
+`zeroshot_eval.py` scores a vocabulary against labelled ground truth, which is
+what makes prompt tuning measurable rather than guesswork.
+
+### Docs
+
+- **[docs/DATA_PLAN.md](docs/DATA_PLAN.md)** — what to train on and in what order
+- **[docs/LABELLING.md](docs/LABELLING.md)** — how many frames, how long, what to correct
+- **[docs/DATA_CARD.md](docs/DATA_CARD.md)** — template, fill in as you go
 
 ## Development
 
