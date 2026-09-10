@@ -38,6 +38,13 @@ from .render import _hex_to_rgb, _readable_text_color
 VERDICTS = ("correct", "wrong_bin", "false_positive", "unsure")
 UNGRADED = "TODO"
 
+#: Not a verdict on a detection -- a record of an object the detector never
+#: found. Contact sheets cannot show these (there is no box to crop), so a
+#: grader adds them by hand with `"index": null`. Without them the scores
+#: measure only precision, and a detector that finds one easy object per image
+#: and nothing else would look perfect.
+MISSED = "missed"
+
 #: Context kept around each detection so the grader can see what it sits on.
 CROP_PADDING = 50
 TILE_WIDTH = 300
@@ -153,7 +160,12 @@ def verdict_stub(result: SortResult, source: str) -> list[dict]:
 
 
 def _cmd_sheet(args: argparse.Namespace) -> int:
-    pipeline = SortingPipeline.build(policy_path=args.policy)
+    from .vocabulary import DEFAULT_VOCAB
+
+    pipeline = SortingPipeline.build(
+        policy_path=args.policy,
+        vocabulary_path=None if args.coco else DEFAULT_VOCAB,
+    )
     args.out.mkdir(parents=True, exist_ok=True)
 
     records: list[dict] = []
@@ -182,7 +194,8 @@ def _cmd_sheet(args: argparse.Namespace) -> int:
 def _cmd_score(args: argparse.Namespace) -> int:
     records = json.loads(args.verdicts.read_text(encoding="utf-8"))
     graded = [r for r in records if r.get("verdict") in VERDICTS]
-    ungraded = len(records) - len(graded)
+    missed = [r for r in records if r.get("verdict") == MISSED]
+    ungraded = len(records) - len(graded) - len(missed)
 
     if not graded:
         print(f"Nothing graded yet ({len(records)} record(s) waiting).")
@@ -214,6 +227,17 @@ def _cmd_score(args: argparse.Namespace) -> int:
         routing = counts["correct"] / real
         print(f"  routing accuracy     {routing:5.0%}   (correct bin, of real objects)")
     print(f"  end-to-end correct   {counts['correct'] / scored:5.0%}")
+
+    # Recall needs objects the detector never found, which no contact sheet
+    # can show. Reported only when a grader has actually looked for them --
+    # silence here means "not measured", never "nothing was missed".
+    if missed:
+        findable = real + len(missed)
+        gap = f"({len(missed)} object(s) missed entirely)"
+        print(f"  recall               {real / findable:5.0%}   {gap}")
+    else:
+        print("  recall               not measured (no 'missed' records in this file)")
+
     if counts["unsure"]:
         print(f"  ({counts['unsure']} unsure detection(s) excluded from the rates above)")
 
@@ -241,6 +265,11 @@ def main(argv: list[str] | None = None) -> int:
     sheet.add_argument("--out", type=Path, default=Path("qa"))
     sheet.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     sheet.add_argument("--confidence", type=float, default=0.15)
+    sheet.add_argument(
+        "--coco",
+        action="store_true",
+        help="grade the stock COCO detector instead of the open vocabulary",
+    )
     sheet.set_defaults(func=_cmd_sheet)
 
     score = sub.add_parser("score", help="summarise a graded verdicts file")

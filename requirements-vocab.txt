@@ -1,0 +1,9 @@
+# Extra dependencies for rebuilding open-vocabulary embeddings.
+#
+# Only needed when vocab/*.yaml changes -- see
+# scripts/build_vocab_embeddings.py. The runtime loads cached embeddings and
+# never imports these, which is what keeps the deployed app small.
+-r requirements.txt
+
+# MobileCLIP's tokenizer. Pulls a ~570MB text encoder on first use.
+clip @ git+https://github.com/ultralytics/CLIP.git

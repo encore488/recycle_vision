@@ -1,0 +1,54 @@
+# Open-vocabulary detection prompts for waste streams.
+#
+# YOLOE is an open-vocabulary detector: rather than a fixed class list baked in
+# at training time, it is given class names as text and matches against their
+# embeddings. That closes the gap COCO cannot -- COCO has no class for a drink
+# can, and this file simply asks for one.
+#
+# Prompt wording matters. "aluminum drink can" outperforms "can", which the
+# text encoder reads as ambiguous. Prefer a concrete noun phrase naming the
+# material and the form.
+#
+# Editing this file requires regenerating the embeddings beside it:
+#
+#     python scripts/build_vocab_embeddings.py vocab/waste_v1.yaml
+#
+# That step needs the MobileCLIP text encoder (a ~570MB download) and is done
+# once, offline. At runtime only the cached embeddings are loaded, so neither
+# the encoder nor a network round-trip is needed to serve a request.
+
+name: Waste v1
+description: >-
+  Containers, fibre, film and organics as they appear on a recycling line or in
+  a kerbside bin.
+model: yoloe-11s-seg.pt
+
+classes:
+  # Metal
+  - aluminum drink can
+  - steel food can
+  - metal can lid
+  - metal bottle cap
+
+  # Plastic
+  - plastic bottle
+  - plastic bottle cap
+  - plastic tub
+  - plastic cup
+  - plastic bag
+  - plastic film wrapper
+  - styrofoam
+
+  # Glass
+  - glass bottle
+  - glass jar
+  - drinking glass
+
+  # Fibre
+  - cardboard box
+  - paper
+  - newspaper
+  - paper cup
+
+  # Organics
+  - food waste

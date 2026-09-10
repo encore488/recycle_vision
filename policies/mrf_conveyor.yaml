@@ -31,8 +31,29 @@ bins:
     name: Mixed Containers
     color: "#1E6FD9"
     description: >-
-      Cans, tubs, bottles and jars. Split downstream by magnet, eddy current
-      and optical sorter.
+      Cans, tubs, bottles and jars that could not be told apart. Split
+      downstream by magnet, eddy current and optical sorter.
+    diverted: true
+
+  # The three bins below are only reachable with a vocabulary that can name
+  # materials. A COCO detector cannot separate them and falls back to
+  # "Mixed Containers" above.
+  - key: metal
+    name: Metal
+    color: "#C2410C"
+    description: Ferrous and aluminium, recovered by magnet and eddy current.
+    diverted: true
+
+  - key: plastic
+    name: Rigid Plastic
+    color: "#7B4FD9"
+    description: PET, HDPE and PP, separated by optical sorter.
+    diverted: true
+
+  - key: glass
+    name: Container Glass
+    color: "#0E7490"
+    description: Bottles and jars. Not glassware.
     diverted: true
 
   - key: fibre
@@ -159,3 +180,106 @@ rules:
   oven: *ewaste
   refrigerator: *ewaste
   clock: *ewaste
+
+  # ==========================================================================
+  # Open-vocabulary classes (vocab/waste_v1.yaml)
+  #
+  # With a vocabulary that can name materials directly, the first-pass split
+  # stops being a guess. "Mixed Containers" existed above because COCO could
+  # not tell aluminium from PP; these classes can, so the stream is separated
+  # properly.
+  # ==========================================================================
+
+  aluminum drink can: &metal
+    bin: metal
+    item: Metal container
+    material: metal
+    handling: Recovered by magnet (ferrous) and eddy current (aluminium).
+    certainty: high
+
+  steel food can: *metal
+  metal can lid: *metal
+
+  metal bottle cap:
+    bin: residue
+    item: Metal cap
+    material: metal
+    handling: Falls through the screens as fines.
+    certainty: low
+    rationale: Valuable material, but below the size the line can catch.
+
+  plastic bottle: &rigid_plastic
+    bin: plastic
+    item: Rigid plastic
+    material: plastic
+    handling: Separated by optical sorter into PET, HDPE and PP streams.
+    certainty: high
+
+  plastic tub: *rigid_plastic
+  plastic cup: *rigid_plastic
+
+  plastic bottle cap:
+    bin: residue
+    item: Plastic cap
+    material: plastic
+    handling: Recovered only while attached to its bottle.
+    certainty: low
+    rationale: Below the size threshold the screens can catch.
+
+  glass bottle: &glass
+    bin: glass
+    item: Container glass
+    material: glass
+    handling: Broken glass is still recoverable in the glass stream.
+    certainty: high
+
+  glass jar: *glass
+
+  drinking glass:
+    bin: residue
+    item: Glassware
+    material: glass
+    handling: Pull off the line -- it contaminates the container glass batch.
+    certainty: high
+    rationale: >-
+      Tableware and tempered glass melt at a different temperature and ruin
+      a batch of recycled container glass. Same material, wrong stream.
+
+  cardboard box: &occ
+    bin: fibre
+    item: Cardboard
+    material: paper
+    handling: Keep dry. Wet fibre is downgraded or rejected.
+    certainty: high
+
+  newspaper: *occ
+  paper cup:
+    bin: residue
+    item: Lined paper cup
+    material: lined paper
+    handling: Poly-lined; a standard fibre mill cannot pulp it.
+    certainty: high
+
+  styrofoam:
+    bin: residue
+    item: Polystyrene foam
+    material: expanded polystyrene
+    handling: Shatters into fragments that contaminate every other stream.
+    certainty: high
+
+  food waste:
+    bin: organics
+    item: Food waste
+    material: organic
+    handling: Remove from the line -- it wets and spoils the fibre stream.
+    certainty: high
+
+  plastic bag: &tangler_film
+    bin: residue
+    item: Film plastic
+    material: film plastic
+    handling: Pull off by hand before it reaches the screens.
+    certainty: high
+    rationale: The classic MRF tangler -- film wraps the screen shafts and stops the line.
+
+  plastic film wrapper: *tangler_film

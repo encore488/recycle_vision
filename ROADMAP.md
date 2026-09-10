@@ -3,8 +3,9 @@
 Working plan for taking RecycleVision from prototype to a demo-able, resume-ready,
 and eventually genuinely useful tool.
 
-**Status:** v0.3 — rebuilt around bin routing. Runs on stock YOLOv8s weights,
-verified end-to-end through both the CLI and the Streamlit UI.
+**Status:** v0.4 — open-vocabulary detection. 100% detection precision and 92% routing
+accuracy on the sample images, up from 75% / 33% on stock COCO.
+[Live demo](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/).
 
 ## The product, in one sentence
 
@@ -71,7 +72,9 @@ can explain itself.
 | Decision | Choice | Rationale |
 | --- | --- | --- |
 | Output | Bin routing decision | The thing a user or a robot actually needs. |
-| Model now | Stock `yolov8n.pt` (COCO) | No custom weights exist; keeps the repo clonable and the demo live today. |
+| Model now | **YOLOE open-vocabulary + `vocab/waste_v1.yaml`** | Zero-shot, and its class list is configuration — so it can be asked for "aluminum drink can", which COCO cannot express at all. |
+| COCO detector | Kept as the measured baseline | Every claim of improvement is against a number, not a memory. |
+| Text embeddings | Precomputed offline, committed (40KB) | The text encoder is ~570MB; needing it at request time would make the app undeployable. |
 | Model later | Custom model trained on real conveyor footage | The actual differentiator. Swapped without touching the UI. |
 | Routing rules | YAML policy files, not code | Facility-specific; must be editable without a deploy. |
 | Non-waste classes | Explicitly ignored, not counted | COCO detects people, cars, dogs. They are not waste. |
@@ -187,11 +190,44 @@ The conveyor demo, and the centrepiece of the resume video.
 **Done when:** there is a 60-second video of material flowing past a count line with live
 per-bin tallies, good enough for a resume.
 
+## Milestone 3.5 — "It's open-vocabulary"  ✅ complete
+
+Unplanned, and it jumped the queue because QA said the detector was the bottleneck and
+this fixes most of it without a single labelled image.
+
+- [x] `vocab/waste_v1.yaml`: 19 waste-specific detection prompts, editable as config.
+- [x] `OpenVocabularyDetector` (YOLOE) behind the existing `Detector` protocol — the
+      pipeline, policies and UI needed no changes to accommodate it.
+- [x] Offline embedding build (`scripts/build_vocab_embeddings.py`), cached to 40KB so the
+      ~570MB text encoder is never needed at runtime. Verified: no clip/mobileclip module
+      is imported when serving.
+- [x] Open-vocabulary rules added to both policies. The MRF policy gains real
+      metal/plastic/glass bins, which were impossible when every container looked
+      like a "cup".
+- [x] Detector picker in the UI, COCO kept as the baseline.
+- [x] Recall added to the QA harness. It previously measured only precision, so a detector
+      that found one easy object per image would have scored perfectly.
+- [x] Annotations label the *item*, not the bin — nine chips reading "Mixed Recycling"
+      carried no information — plus a colour legend so a saved image explains itself.
+
+| Metric | COCO | Open vocabulary |
+| --- | --- | --- |
+| Detection precision | 75% | **100%** |
+| Routing accuracy | 33% | **92%** |
+| Recall | not measured | **93%** |
+
+Still zero-shot: it has never seen a labelled conveyor belt. Milestone 4 is unchanged,
+but its baseline is now much higher and its argument is different — training has to beat
+a good open-vocabulary model, not a bad closed-set one.
+
 ## Milestone 4 — "It's credible ML"
 
 Separates "used a model" from "understands ML". Gated on real data.
 
 - [ ] **Capture conveyor footage.** The blocking dependency for everything below.
+- [ ] Use the open-vocabulary detector to *pre-label* that footage, then correct it by
+      hand. Far cheaper than labelling from scratch, and the QA harness is already the
+      correcting interface.
 - [x] QA harness (`recyclevision.qa`): per-detection contact sheets, a hand-gradable
       verdict file, and scoring that separates detector failures from policy failures.
       Pulled forward from this milestone because it was needed to evaluate v0.3 at all.

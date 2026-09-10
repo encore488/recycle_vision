@@ -12,12 +12,16 @@ from pathlib import Path
 import streamlit as st
 from PIL import Image
 
-from recyclevision import RoutingPolicy, SortingPipeline, annotate
+from recyclevision import RoutingPolicy, SortingPipeline, annotate, vocabulary
 from recyclevision.policy import PolicyError
+from recyclevision.vocabulary import Vocabulary
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_DIR = PROJECT_ROOT / "images"
 POLICY_DIR = PROJECT_ROOT / "policies"
+
+#: Sentinel for the closed-set COCO detector, kept as the measured baseline.
+COCO = "coco"
 
 st.set_page_config(page_title="RecycleVision AI", page_icon="♻️", layout="wide")
 
@@ -28,11 +32,14 @@ st.set_page_config(page_title="RecycleVision AI", page_icon="♻️", layout="wi
 
 
 @st.cache_resource(show_spinner="Loading model…")
-def load_detector():
-    """Loaded once. Swapping policy must not re-pay for the model."""
-    from recyclevision.detector import YoloDetector
+def load_detector(kind: str):
+    """Loaded once per detector. Swapping policy must not re-pay for a model."""
+    from recyclevision.detector import OpenVocabularyDetector, YoloDetector
+    from recyclevision.vocabulary import Vocabulary
 
-    return YoloDetector()
+    if kind == COCO:
+        return YoloDetector()
+    return OpenVocabularyDetector(Vocabulary.load(kind))
 
 
 @st.cache_resource(show_spinner=False)
@@ -75,14 +82,11 @@ if not policies:
     st.stop()
 policy_names = dict(policies)
 
-try:
-    detector = load_detector()
-except Exception as exc:  # noqa: BLE001 - surface anything to the user, not the logs
-    st.error(f"Could not load the detection model: {exc}")
-    st.info("Check your network connection -- the stock model downloads on first run.")
-    st.stop()
-
-weights = detector.weights
+detector_options: list[tuple[str, str]] = [
+    (str(path), f"Open vocabulary · {Vocabulary.load(path).name}") for path in vocabulary.discover()
+]
+detector_options.append((COCO, "Stock COCO (baseline)"))
+detector_labels = dict(detector_options)
 
 
 # --------------------------------------------------------------------------
@@ -91,6 +95,25 @@ weights = detector.weights
 
 with st.sidebar:
     st.title("⚙️ Settings")
+
+    detector_kind = st.selectbox(
+        "Detector",
+        options=[key for key, _ in detector_options],
+        format_func=lambda k: detector_labels[k],
+        help=(
+            "An open-vocabulary model is told what to look for in words, so it "
+            "can name a drink can. COCO cannot."
+        ),
+    )
+
+    try:
+        detector = load_detector(detector_kind)
+    except Exception as exc:  # noqa: BLE001 - surface anything, not just the logs
+        st.error(f"Could not load the detector: {exc}")
+        st.info("Check your network connection — model weights download on first run.")
+        st.stop()
+
+    weights = detector.weights
 
     confidence = st.slider(
         "Confidence threshold",

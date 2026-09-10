@@ -1,0 +1,266 @@
+[
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 0,
+    "detected_as": "steel food can",
+    "confidence": 0.814,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      166,
+      282,
+      374,
+      525
+    ],
+    "verdict": "correct",
+    "actually_is": "steel food can",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 1,
+    "detected_as": "aluminum drink can",
+    "confidence": 0.618,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      651,
+      204,
+      745,
+      350
+    ],
+    "verdict": "correct",
+    "actually_is": "steel food can",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 2,
+    "detected_as": "metal can lid",
+    "confidence": 0.545,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      220,
+      150,
+      294,
+      219
+    ],
+    "verdict": "correct",
+    "actually_is": "metal can lid",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 3,
+    "detected_as": "glass jar",
+    "confidence": 0.493,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      293,
+      2,
+      373,
+      133
+    ],
+    "verdict": "correct",
+    "actually_is": "glass jar",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 4,
+    "detected_as": "aluminum drink can",
+    "confidence": 0.392,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      389,
+      169,
+      481,
+      272
+    ],
+    "verdict": "correct",
+    "actually_is": "plastic water bottle",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 5,
+    "detected_as": "metal can lid",
+    "confidence": 0.345,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      201,
+      221,
+      290,
+      277
+    ],
+    "verdict": "correct",
+    "actually_is": "metal can lid",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 6,
+    "detected_as": "plastic bottle cap",
+    "confidence": 0.272,
+    "routed_to": "recycling",
+    "policy_certainty": "low",
+    "box": [
+      394,
+      297,
+      421,
+      317
+    ],
+    "verdict": "unsure",
+    "actually_is": "small bright fragment on the belt",
+    "should_be_bin": "",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 7,
+    "detected_as": "steel food can",
+    "confidence": 0.246,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      531,
+      174,
+      659,
+      273
+    ],
+    "verdict": "correct",
+    "actually_is": "steel food can",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test.jpg",
+    "index": 8,
+    "detected_as": "metal bottle cap",
+    "confidence": 0.171,
+    "routed_to": "recycling",
+    "policy_certainty": "low",
+    "box": [
+      223,
+      159,
+      280,
+      219
+    ],
+    "verdict": "correct",
+    "actually_is": "metal can end",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 0,
+    "detected_as": "styrofoam",
+    "confidence": 0.606,
+    "routed_to": "landfill",
+    "policy_certainty": "high",
+    "box": [
+      1620,
+      1408,
+      3293,
+      2506
+    ],
+    "verdict": "wrong_bin",
+    "actually_is": "sheet of paper",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 1,
+    "detected_as": "steel food can",
+    "confidence": 0.502,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      3264,
+      1398,
+      4032,
+      2461
+    ],
+    "verdict": "correct",
+    "actually_is": "steel food can",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 2,
+    "detected_as": "plastic tub",
+    "confidence": 0.448,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      2800,
+      218,
+      3930,
+      1267
+    ],
+    "verdict": "correct",
+    "actually_is": "plastic tub (cottage cheese)",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 3,
+    "detected_as": "plastic tub",
+    "confidence": 0.415,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      0,
+      992,
+      1679,
+      2873
+    ],
+    "verdict": "correct",
+    "actually_is": "large clear plastic container",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": 4,
+    "detected_as": "metal can lid",
+    "confidence": 0.306,
+    "routed_to": "recycling",
+    "policy_certainty": "high",
+    "box": [
+      745,
+      176,
+      1531,
+      975
+    ],
+    "verdict": "correct",
+    "actually_is": "aluminium drink can",
+    "should_be_bin": "recycling",
+    "graded_by": "claude"
+  },
+  {
+    "source": "images/recycl_test2.jpeg",
+    "index": null,
+    "detected_as": null,
+    "confidence": null,
+    "routed_to": null,
+    "verdict": "missed",
+    "actually_is": "drinking glass",
+    "should_be_bin": "landfill",
+    "graded_by": "claude",
+    "note": "Present in the image, produced no detection at conf 0.15."
+  }
+]

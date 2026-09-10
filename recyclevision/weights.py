@@ -32,9 +32,14 @@ class WeightsChoice:
 
     path: str
     is_custom: bool
+    #: Overrides the derived name. Set by detectors that know better -- an
+    #: open-vocabulary model is identified by its vocabulary, not its file.
+    display_name_override: str = ""
 
     @property
     def display_name(self) -> str:
+        if self.display_name_override:
+            return self.display_name_override
         return Path(self.path).stem if self.is_custom else "YOLOv8s (COCO)"
 
     @property

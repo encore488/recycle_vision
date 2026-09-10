@@ -106,12 +106,40 @@ def _find_label_slot(
     return (x, preferred_y, x + width, preferred_y + height)
 
 
+def _draw_legend(draw: ImageDraw.ImageDraw, result: SortResult, font, canvas_size) -> None:
+    """A key for the bin colours, so a saved image explains itself.
+
+    In the app the bin cards below the image serve this purpose, but an
+    annotated PNG on its own has no other way to say what blue means.
+    """
+    bins = result.bins_used
+    if not bins:
+        return
+
+    width, height = canvas_size
+    swatch = max(10, font.size if hasattr(font, "size") else 12)
+    line_h = swatch + 6
+    entries = [(b, b.name) for b in bins]
+    text_w = max(draw.textlength(name, font=font) for _, name in entries)
+    box_w = int(swatch + 8 + text_w + 16)
+    box_h = line_h * len(entries) + 10
+
+    x0, y0 = 8, height - box_h - 8
+    draw.rectangle([x0, y0, x0 + box_w, y0 + box_h], fill=(12, 12, 12))
+
+    for row, (bin_, name) in enumerate(entries):
+        y = y0 + 6 + row * line_h
+        draw.rectangle([x0 + 8, y, x0 + 8 + swatch, y + swatch], fill=_hex_to_rgb(bin_.color))
+        draw.text((x0 + 8 + swatch + 8, y - 1), name, fill=(255, 255, 255), font=font)
+
+
 def annotate(
     image: Image.Image,
     result: SortResult,
     show_boxes: bool = True,
     show_labels: bool = True,
     show_confidence: bool = True,
+    show_legend: bool = True,
 ) -> Image.Image:
     """Return a copy of `image` with each item boxed in its bin's colour."""
     canvas = image.convert("RGB").copy()
@@ -150,7 +178,11 @@ def annotate(
         color = _hex_to_rgb(item.bin.color)
         box = item.detection.box
 
-        text = item.bin.name
+        # The bin is already carried by the colour, and repeating its name on
+        # every box says nothing when a whole image routes the same way -- nine
+        # chips reading "Mixed Recycling" is noise. The item name is the thing
+        # the picture cannot otherwise tell you.
+        text = item.label
         if show_confidence:
             text = f"{text}  {item.confidence:.0%}"
         if item.needs_review:
@@ -187,5 +219,8 @@ def annotate(
             fill=_readable_text_color(color),
             font=font,
         )
+
+    if show_legend:
+        _draw_legend(draw, result, font, canvas.size)
 
     return canvas
