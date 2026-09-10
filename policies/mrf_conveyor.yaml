@@ -283,3 +283,49 @@ rules:
     rationale: The classic MRF tangler -- film wraps the screen shafts and stops the line.
 
   plastic film wrapper: *tangler_film
+
+  # --- vocab/waste_v2.yaml ---------------------------------------------------
+
+  metal can:
+    bin: metal
+    item: Metal container
+    material: metal
+    handling: Recovered by magnet (ferrous) and eddy current (aluminium).
+    certainty: high
+    rationale: >-
+      The line separates ferrous from aluminium mechanically, so the camera
+      does not need to -- and asking it to only introduced error.
+
+  plastic wrapper:
+    bin: residue
+    item: Film plastic
+    material: film plastic
+    handling: Pull off by hand before it reaches the screens.
+    certainty: high
+    rationale: The classic MRF tangler -- film wraps the screen shafts and stops the line.
+
+  foam cup or tray:
+    bin: residue
+    item: Polystyrene foam
+    material: expanded polystyrene
+    handling: Shatters into fragments that contaminate every other stream.
+    certainty: high
+
+  sheet of paper:
+    bin: fibre
+    item: Paper
+    material: paper
+    handling: Keep dry. Wet fibre is downgraded or rejected.
+    certainty: high
+
+  paper: *occ
+
+  empty drinking glass:
+    bin: residue
+    item: Drinking glass
+    material: glass
+    handling: Pull off the line -- it contaminates the container glass batch.
+    certainty: high
+    rationale: >-
+      Not container glass. Tableware and tempered glass melt at a different
+      temperature and will ruin a batch of recycled container glass.

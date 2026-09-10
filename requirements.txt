@@ -1,6 +1,11 @@
 # Direct dependencies only. Transitive packages are resolved by pip.
-# (v0.2 shipped a 62-line UTF-16 `pip freeze`, which pinned every transitive
-# dependency and was unreadable in diffs.)
+
+# CPU-only torch. The default PyPI wheel bundles CUDA and is ~550MB, which is
+# slow to install and tight against a small host's disk and memory budget; the
+# CPU build is a fraction of that and this app never sees a GPU. This is an
+# *extra* index, so if it is unreachable pip falls back to PyPI rather than
+# failing the install.
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 streamlit>=1.40
 ultralytics>=8.3

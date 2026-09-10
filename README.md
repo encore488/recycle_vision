@@ -170,41 +170,59 @@ Verdicts separate the two failure modes, because they have different fixes:
 
 ### Current scores
 
-Graded by hand over the two sample images, confirmed by the repo owner
-(`qa/verdicts.json`, `qa/verdicts_mrf.json`, `qa/openvocab/verdicts.json`):
+Graded by hand over the two sample images (`qa/*/verdicts.json`):
 
-| | COCO + household | COCO + MRF | **Open vocab + household** |
+| | COCO | Open vocab v1 | **Open vocab v2** |
 | --- | --- | --- | --- |
-| Detections | 9 | 9 | 14 |
-| Detection precision | 75% | 75% | **100%** |
-| Routing accuracy | 33% | 83% | **92%** |
-| End-to-end correct | 25% | 62% | **92%** |
-| Recall | not measured | not measured | **93%** |
+| Detections | 9 | 14 | 15 |
+| Detection precision | 75% | 100% | **100%** |
+| Class accuracy | — | 62% | **85%** |
+| Routing accuracy | 33% | 92% | **100%** |
 
-Two independent wins, and it matters which is which:
+**Read class accuracy before routing accuracy.** Routing accuracy flatters the
+model badly: it forgives every mislabel that happens to land in the right bin,
+and on v1 that was most of them. v1 scored 92% routing while naming 38% of
+objects wrongly — a steel can called "aluminum drink can", a plastic bottle
+called a can. The pictures looked wrong because they *were* wrong; the headline
+number hid it. Class accuracy was added to the harness specifically to stop
+that.
 
-- **COCO → MRF policy** tripled routing accuracy with *no change to the model*.
-  Detection precision stayed at 75%, because a policy cannot fix a box drawn on
-  an empty conveyor belt.
-- **COCO → open vocabulary** took detection precision to 100% and found 14 real
-  objects where COCO found 7, because the detector is finally being asked for
-  the right things.
+#### ⚠️ These numbers are fitted, not predicted
 
-What is left:
+The v2 vocabulary was tuned *against these two images*: prompts were added,
+reworded and deleted based on what they scored here. That is overfitting by
+construction, and 15 detections over 2 images is a tiny sample. **Treat these
+as "the mechanism works", not as an accuracy estimate.** The first honest
+measurement will be the first image the vocabulary has not seen.
 
-- **One wrong bin**: a sheet of paper called `styrofoam`, sent to landfill
-  instead of recycling.
-- **One missed object**: a drinking glass produced no detection at all. Recall
-  is only measured because a grader recorded the miss by hand — a contact sheet
-  cannot show an object that produced no box.
-- **One unsure**: a small bright fragment on the belt that may or may not be an
-  item.
+What is still wrong, on the images it *was* fitted to:
 
-Sample-size caveats, stated plainly: 14 detections over 2 images is small, the
-MRF policy and the vocabulary were both written after seeing these images, and
-neither has been tested on footage it has not seen. Treat these as a floor for
-"is the mechanism working", not as an accuracy claim. The QA harness exists so
-the next measurement is cheap.
+- A clear plastic water bottle is called a metal can, and a can end is called a
+  bottle cap. Both are mislabels that route correctly, which is the best kind
+  of error to have left.
+- Two small fragments on the belt are graded `unsure` — too small to identify
+  from the image at all.
+
+## How the vocabulary is designed
+
+The rule: **ask for a distinction only where it changes a bin decision.**
+
+v1 asked the detector to separate aluminium cans from steel cans. Both go in
+the same bin under every shipped policy, and a materials recovery facility
+separates them mechanically downstream anyway — so the distinction bought
+nothing and cost accuracy, producing the single largest source of mislabels.
+v2 merges them into `metal can`.
+
+The reverse also applies. Container glass and drinking glass *do* go to
+different bins — a tumbler ruins a batch of recycled container glass — so that
+split is kept and reinforced, even though both are "glass".
+
+One prompt was deleted outright. v1's `styrofoam` fired on a sheet of paper,
+sending recyclable fibre to landfill. Every replacement tested (`foam cup or
+tray`, `white foam packaging`, `polystyrene foam block`) captured the same
+sheet of paper, because neither validation image contains foam and the prompt
+settled on the nearest pale flat object. A prompt that cannot be shown to work
+is a liability rather than a gap, so it was removed rather than reworded again.
 
 ## Writing a policy
 
@@ -253,11 +271,17 @@ the dashboard.
 Live at
 [recyclevision.streamlit.app](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/),
 deployed from `main` on Streamlit Community Cloud.
-`packages.txt` installs the system libraries `opencv-python` links against —
-without them the app dies at import with `libGL.so.1: cannot open shared object
-file`, which is invisible locally and immediate in deployment.
 
-Stock weights download on first request, so the first page load after a cold
+`packages.txt` installs the system libraries `opencv-python` links against.
+**These are installed when the container is built, not on every redeploy** — so
+if the app was first created before `packages.txt` existed, a plain redeploy
+will keep failing with `libGL.so.1: cannot open shared object file`. Use
+*Manage app → Reboot app* to force a container rebuild.
+
+`requirements.txt` pulls CPU-only torch from PyTorch's own index; the default
+PyPI wheel bundles CUDA and is roughly three times the size, which matters on a
+constrained builder.
+Model weights download on first request, so the first page load after a cold
 start is slower than subsequent ones.
 
 ## Development

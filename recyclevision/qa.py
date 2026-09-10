@@ -154,6 +154,11 @@ def verdict_stub(result: SortResult, source: str) -> list[dict]:
             "verdict": UNGRADED,
             "actually_is": "",
             "should_be_bin": "",
+            # Whether the label names the object correctly. Separate from the
+            # verdict on purpose: a steel can labelled "aluminum drink can" is
+            # mislabelled but still routed right, and reporting only the bin
+            # would hide that entirely.
+            "class_correct": None,
         }
         for i, item in enumerate(result.items)
     ]
@@ -220,9 +225,22 @@ def _cmd_score(args: argparse.Namespace) -> int:
         print("  every detection was graded 'unsure' -- nothing to score")
         return 0
 
-    # Detection precision and routing accuracy fail for different reasons and
-    # are fixed in different places, so they are never combined into one score.
+    # These fail for different reasons and are fixed in different places, so
+    # they are never combined into one score. Routing accuracy in particular
+    # flatters the model: it forgives every mislabel that happens to land in
+    # the right bin, and on this data that is most of them.
     print(f"  detection precision  {real / scored:5.0%}   (boxes that are on a real object)")
+
+    classed = [
+        r for r in graded if r["verdict"] != "false_positive" and r.get("class_correct") is not None
+    ]
+    if classed:
+        right = sum(1 for r in classed if r["class_correct"])
+        note = "(label names the object correctly)"
+        print(f"  class accuracy       {right / len(classed):5.0%}   {note}")
+    else:
+        print("  class accuracy       not measured (no 'class_correct' grades in this file)")
+
     if real:
         routing = counts["correct"] / real
         print(f"  routing accuracy     {routing:5.0%}   (correct bin, of real objects)")

@@ -144,3 +144,14 @@ class TestCli:
     def test_missing_image_is_a_clean_error(self, tmp_path):
         with pytest.raises(SystemExit):
             main(["sheet", str(tmp_path / "nope.jpg")])
+
+
+class TestVocabularyDefault:
+    def test_default_vocabulary_has_embeddings_built(self):
+        """The shipped default must be usable straight from a clone."""
+        from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary, discover
+
+        assert DEFAULT_VOCAB in discover(), (
+            f"{DEFAULT_VOCAB.name} has no cached embeddings; run scripts/build_vocab_embeddings.py"
+        )
+        assert Vocabulary.load(DEFAULT_VOCAB).classes
