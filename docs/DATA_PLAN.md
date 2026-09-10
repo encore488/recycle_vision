@@ -126,13 +126,68 @@ with the friendliest licences and the most compatible taxonomies.
 
 Each needs its own file in `mappings/`. That is the whole cost of adding one.
 
+## First contact with real data: WaRP
+
+SortWaste could not be obtained, so WaRP was used instead — 2,974 images from an
+industrial sorting plant, 28 item-level classes translated down to 5 of ours.
+
+Zero-shot, `waste_v2`, household policy, 200 val images:
+
+```
+  precision  4.4%        matched 11 of 348 labelled objects
+  recall     3.2%
+  class accuracy    9.1%
+  routing accuracy 54.5%
+```
+
+Against 100% / 85% on two clean photos. The two-image numbers were worthless,
+exactly as the README warned. This is the first honest measurement the project
+has had, and it says the detector does not transfer to an unfamiliar belt.
+
+### The failure has a shape
+
+**All ~238 false positives came from prompts for things WaRP cannot contain:**
+plastic wrapper (119), food waste (50), bottle caps (46), sheet of paper (15).
+Not one came from a class actually present in the data.
+
+That is the same mechanism as v1's `styrofoam` firing on a sheet of paper, now
+visible at scale. An open-vocabulary detector is not asked "is this present?" —
+it is asked "which of these names fits best". Given a name with no referent in
+the scene, the best fit is background.
+
+**The design rule that follows: ask only for what the stream can contain.** A
+prompt for something that never appears on a line is not free; it is a permanent
+false-positive source on that line. Vocabulary is therefore facility-scoped
+configuration, like a routing policy. `vocab/containers.yaml` is the first
+example.
+
+### Two causes, separable by one command each
+
+1. **Inference resolution.** `predict()` never passed `imgsz`, so ultralytics
+   used its 640 default — on WaRP's 1920×1080 frames that shrinks every object
+   threefold. Meanwhile `train.py` had argued for 960 *"because conveyor items
+   are small in frame"*. The belief was right and simply never reached
+   inference. Now `DEFAULT_IMGSZ = 960`, tunable everywhere.
+2. **Unscoped vocabulary**, as above.
+
+Neither is settled until looked at, which is what `scripts/diagnose_eval.py` is
+for: it draws ground truth in green and predictions in red. A 4% precision has
+two indistinguishable explanations — a failing model, or a harness comparing the
+wrong things — and only a picture separates them.
+
+### Also worth recording
+
+WaRP is **sparse**: 1.74 labelled objects per image, not the 10–40 of a real
+MRF belt. It is a good taxonomy match and a poor clutter match, so a good score
+on it would not have proven much about the target domain either.
+
 ## Datasets considered
 
 | Dataset | Domain | Labels | Taxonomy | Licence | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| **SortWaste** | Real MBT conveyor, top-down | Boxes | Material | Authors approved | **Start here.** Right camera angle, right clutter, raw video available. |
+| **SortWaste** | Real MBT conveyor, top-down | Boxes | Material | Authors approved | Could not be obtained. Still the best fit if it becomes available. |
+| **WaRP** *(in use)* | Industrial sorting plant | Boxes | **Item-level** | Kaggle | Best taxonomy match, and imported. Sparse (1.7 objects/image), so a poor proxy for MRF clutter. |
 | ZeroWaste-f | Real MRF conveyor | **Masks** | Material | CC BY-NC 4.0 | Pretraining only. It was captured on a *paper* line, so paper is labelled as background — actively wrong for a project whose thesis is routing paper correctly. |
-| WaRP | Industrial sorting plant | Boxes + some masks | **Item-level** | Kaggle | Strongest taxonomy match. Worth it after SortWaste. |
 | SpectralWaste | Conveyor | Masks | Jam-causers | CC BY 4.0 | Niche, but the only unambiguous commercial licence. |
 | TACO | In the wild | Masks | Item-level | **MIT** | Best licence, good for diversity. |
 | Drinking Waste | Clean background | Boxes | Item-level | **CC0** | Exactly our four key distinctions; no clutter, so pair it with belt data. |

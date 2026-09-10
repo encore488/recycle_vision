@@ -31,6 +31,13 @@ def _to_detections(result, names) -> list[Detection]:
     return detections
 
 
+#: Inference resolution. Ultralytics defaults to 640, which downscales a
+#: 1920x1080 conveyor frame by a factor of three and shrinks every object with
+#: it. Waste on a belt is small in frame to begin with, so that default costs
+#: recall badly on exactly the imagery this project targets.
+DEFAULT_IMGSZ = 960
+
+
 @runtime_checkable
 class Detector(Protocol):
     """Anything that can find objects in an image."""
@@ -53,10 +60,11 @@ class YoloDetector:
     importable -- and testable -- in environments that have neither.
     """
 
-    def __init__(self, weights: WeightsChoice | None = None) -> None:
+    def __init__(self, weights: WeightsChoice | None = None, imgsz: int = DEFAULT_IMGSZ) -> None:
         from ultralytics import YOLO  # deferred: heavy import
 
         self.weights = weights or resolve_weights()
+        self.imgsz = imgsz
         self._model = YOLO(self.weights.path)
 
     @property
@@ -73,7 +81,7 @@ class YoloDetector:
         return list(self._model.names.values())
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
-        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
         return _to_detections(result, self._model.names)
 
 
@@ -91,10 +99,11 @@ class OpenVocabularyDetector:
     request time would make the app undeployable on a small host.
     """
 
-    def __init__(self, vocabulary: Vocabulary | None = None) -> None:
+    def __init__(self, vocabulary: Vocabulary | None = None, imgsz: int = DEFAULT_IMGSZ) -> None:
         from ultralytics import YOLOE  # deferred: heavy import
 
         self.vocabulary = vocabulary or Vocabulary.load(DEFAULT_VOCAB)
+        self.imgsz = imgsz
         embeddings = self.vocabulary.load_embeddings()
 
         self._model = YOLOE(self.vocabulary.model)
@@ -123,7 +132,7 @@ class OpenVocabularyDetector:
         )
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
-        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
         return _to_detections(result, self._model.names)
 
     def detect_with_masks(
@@ -136,7 +145,7 @@ class OpenVocabularyDetector:
         for pre-labelling, where the outline is the expensive half of the
         annotation and this model produces it for nothing.
         """
-        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
         detections = _to_detections(result, self._model.names)
 
         if result.masks is None:
@@ -147,7 +156,9 @@ class OpenVocabularyDetector:
         # a silent mismatch would attach one object's outline to another.
         if len(outlines) != len(detections):
             return [(d, None) for d in detections]
-        return list(zip(detections, outlines, strict=True))
+        # Indexed rather than zipped: `zip(strict=)` is Python 3.10+, and the
+        # length check above already does what it would.
+        return [(detections[i], outlines[i]) for i in range(len(detections))]
 
 
 class TrainedSegmentationDetector:
@@ -159,9 +170,10 @@ class TrainedSegmentationDetector:
     reason to label in batches rather than all at once.
     """
 
-    def __init__(self, weights: str | Path) -> None:
+    def __init__(self, weights: str | Path, imgsz: int = DEFAULT_IMGSZ) -> None:
         from ultralytics import YOLO  # deferred: heavy import
 
+        self.imgsz = imgsz
         self.weights_path = Path(weights)
         if not self.weights_path.is_file():
             raise FileNotFoundError(f"no weights at {self.weights_path}")
@@ -180,20 +192,22 @@ class TrainedSegmentationDetector:
         return WeightsChoice(path=str(self.weights_path), is_custom=True)
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
-        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
         return _to_detections(result, self._model.names)
 
     def detect_with_masks(
         self, image, confidence: float = 0.25
     ) -> list[tuple[Detection, list[tuple[float, float]] | None]]:
-        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
         detections = _to_detections(result, self._model.names)
         if result.masks is None:
             return [(d, None) for d in detections]
         outlines = [[(float(x), float(y)) for x, y in polygon] for polygon in result.masks.xy]
         if len(outlines) != len(detections):
             return [(d, None) for d in detections]
-        return list(zip(detections, outlines, strict=True))
+        # Indexed rather than zipped: `zip(strict=)` is Python 3.10+, and the
+        # length check above already does what it would.
+        return [(detections[i], outlines[i]) for i in range(len(detections))]
 
 
 class StubDetector:

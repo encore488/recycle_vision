@@ -79,7 +79,10 @@ def frame_difference(a: list[float], b: list[float]) -> float:
     """Mean absolute difference between two thumbnails, 0-255."""
     if not a or not b or len(a) != len(b):
         return 255.0
-    return sum(abs(x - y) for x, y in zip(a, b, strict=True)) / len(a)
+    # Indexed rather than zipped: the lengths are already checked above, and
+    # `zip(strict=)` -- which is what a linter would ask for here -- does not
+    # exist on Python 3.9, which these scripts are run on.
+    return sum(abs(a[i] - b[i]) for i in range(len(a))) / len(a)
 
 
 def is_novel(signature: list[float], kept: list[float] | None, min_diff: float) -> bool:
