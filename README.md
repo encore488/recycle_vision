@@ -319,6 +319,41 @@ constrained builder.
 Model weights download on first request, so the first page load after a cold
 start is slower than subsequent ones.
 
+## Training on your own footage
+
+The pipeline is built for one situation: crowded conveyor frames, 10–40 objects
+each, and a person whose hours are the scarce resource.
+
+```bash
+python scripts/extract_frames.py belt.mp4 --out datasets/raw     # drops near-duplicates
+python scripts/prelabel.py datasets/raw --out datasets/round1    # boxes AND masks, free
+# ...correct in Label Studio or CVAT...
+python train.py --data datasets/round1/data.yaml
+python scripts/evaluate.py --weights runs/segment/<run>/weights/best.pt     --data datasets/round1/data.yaml
+```
+
+Then pre-label the next batch with the model you just trained:
+
+```bash
+python scripts/prelabel.py datasets/raw --out datasets/round2     --weights runs/segment/<run>/weights/best.pt
+```
+
+Each round the pre-labels get better and the correcting gets faster.
+
+**You never draw a polygon.** The shipped detector is a segmentation model, so
+pre-labels carry outlines already; for objects it misses, SAM turns a box you
+drew into a mask. The human job is checking classes and fixing boxes.
+
+**Evaluation reports routing accuracy, not just mAP.** Confusing an aluminium
+can for a steel one is a class error worth nothing — both go in the same bin.
+Confusing a drinking glass for a jar contaminates a batch. `scripts/evaluate.py`
+separates "confusions that changed the bin" from "confusions that did not", so
+effort goes where it changes an outcome.
+
+See **[docs/LABELLING.md](docs/LABELLING.md)** for how many frames to label, how
+long it takes, and what is worth correcting. Fill in
+[docs/DATA_CARD.md](docs/DATA_CARD.md) as you go.
+
 ## Development
 
 ```bash
@@ -344,7 +379,17 @@ recyclevision/
   render.py             Bin-coloured annotation
   weights.py            Custom weights if present, stock if not
   __main__.py           CLI entry point
-policies/household.yaml Routing rules
+  dataset.py            Frame sampling, splits, YOLO label formatting
+  evaluate.py           Routing-aware scoring
+  impact.py             Mass and CO2e estimates
+  report.py             CSV / JSON export
+  session.py            Totals across a batch
+policies/*.yaml         Routing rules
+vocab/*.yaml            Open-vocabulary prompts (+ cached embeddings)
+impact/factors.yaml     Mass and carbon factors (placeholders)
+train.py                Fine-tune on corrected labels
+scripts/                Frame extraction, pre-labelling, evaluation
+docs/LABELLING.md       How to label footage without wasting your time
 tests/                  Weight-free test suite
 ```
 

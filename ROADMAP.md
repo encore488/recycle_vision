@@ -3,7 +3,7 @@
 Working plan for taking RecycleVision from prototype to a demo-able, resume-ready,
 and eventually genuinely useful tool.
 
-**Status:** v0.6 — batch mode, export and impact estimates. Open-vocabulary detection with vocabulary v2. 100% detection precision,
+**Status:** v0.7 — training pipeline ready. Batch mode, export and impact estimates. Open-vocabulary detection with vocabulary v2. 100% detection precision,
 85% class accuracy, 100% routing accuracy on the (small, fitted) sample set.
 [Live demo](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/).
 
@@ -244,10 +244,22 @@ Separates "used a model" from "understands ML". Gated on real data.
       Public bootstraps: TACO, TrashNet, ZeroWaste.
 - [ ] Label taxonomy designed *backwards from the bins* — classes should be the distinctions
       that change a routing decision, not an arbitrary material ontology.
-- [ ] `train.py` with reproducible hyperparameters and logged runs.
-- [ ] **Evaluation page:** mAP50-95, per-class PR curves, confusion matrix, latency
-      distribution on a held-out set. Report *routing* accuracy, not just detection mAP —
-      a confusion between two classes that share a bin costs nothing.
+- [x] `train.py` with reproducible hyperparameters and logged runs.
+- [x] Frame extraction with near-duplicate rejection, and a train/val split by frame block
+      rather than at random — a random split of video frames leaks near-identical frames
+      across both sides and makes validation meaningless.
+- [x] Pre-labelling that emits **boxes and masks**, so no polygon is ever drawn by hand.
+      Iterative by design: `--weights` pre-labels the next batch with the model trained on
+      the last one.
+- [x] `docs/LABELLING.md` — frame counts, honest time estimates, and what is worth
+      correcting. **Estimated labelling time exceeds the 5-hour threshold for the naive
+      approach, so it opens with a checklist to re-check auto-labelling tooling first.**
+- [x] `docs/DATA_CARD.md` template.
+- [x] **Routing-aware evaluation** (`scripts/evaluate.py`): mAP alongside class accuracy
+      and routing accuracy, splitting confusions into those that changed a bin and those
+      that did not. A model that trades the second for the first looks better on mAP and
+      is worse in practice.
+- [ ] Evaluation *page* in the app: per-class PR curves, confusion matrix, latency.
 - [ ] Publish weights as a GitHub Release asset; bootstrap prefers them over stock.
 - [ ] **Active learning loop.** Correct a wrong route in the UI; write the corrected label to
       `data/feedback/` in YOLO format. Feeds the dataset and makes a great interview story.

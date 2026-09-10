@@ -126,6 +126,75 @@ class OpenVocabularyDetector:
         result = self._model.predict(image, conf=confidence, verbose=False)[0]
         return _to_detections(result, self._model.names)
 
+    def detect_with_masks(
+        self, image, confidence: float = 0.25
+    ) -> list[tuple[Detection, list[tuple[float, float]] | None]]:
+        """Detections paired with their segmentation outlines.
+
+        Not part of the `Detector` protocol -- only a segmentation model can
+        answer it, and the sorting pipeline has no use for masks. It exists
+        for pre-labelling, where the outline is the expensive half of the
+        annotation and this model produces it for nothing.
+        """
+        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        detections = _to_detections(result, self._model.names)
+
+        if result.masks is None:
+            return [(d, None) for d in detections]
+
+        outlines = [[(float(x), float(y)) for x, y in polygon] for polygon in result.masks.xy]
+        # Guard against the two lists disagreeing rather than zipping blindly:
+        # a silent mismatch would attach one object's outline to another.
+        if len(outlines) != len(detections):
+            return [(d, None) for d in detections]
+        return list(zip(detections, outlines, strict=True))
+
+
+class TrainedSegmentationDetector:
+    """A model trained by `train.py`, behind the same interface.
+
+    Exists so the labelling loop can bootstrap itself: label a batch by hand,
+    train on it, then pre-label the next batch with the result. Each round the
+    pre-labels get closer and the correcting gets faster, which is the whole
+    reason to label in batches rather than all at once.
+    """
+
+    def __init__(self, weights: str | Path) -> None:
+        from ultralytics import YOLO  # deferred: heavy import
+
+        self.weights_path = Path(weights)
+        if not self.weights_path.is_file():
+            raise FileNotFoundError(f"no weights at {self.weights_path}")
+        self._model = YOLO(str(self.weights_path))
+
+    @property
+    def name(self) -> str:
+        return self.weights_path.stem
+
+    @property
+    def class_names(self) -> list[str]:
+        return list(self._model.names.values())
+
+    @property
+    def weights(self) -> WeightsChoice:
+        return WeightsChoice(path=str(self.weights_path), is_custom=True)
+
+    def detect(self, image, confidence: float = 0.25) -> list[Detection]:
+        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        return _to_detections(result, self._model.names)
+
+    def detect_with_masks(
+        self, image, confidence: float = 0.25
+    ) -> list[tuple[Detection, list[tuple[float, float]] | None]]:
+        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        detections = _to_detections(result, self._model.names)
+        if result.masks is None:
+            return [(d, None) for d in detections]
+        outlines = [[(float(x), float(y)) for x, y in polygon] for polygon in result.masks.xy]
+        if len(outlines) != len(detections):
+            return [(d, None) for d in detections]
+        return list(zip(detections, outlines, strict=True))
+
 
 class StubDetector:
     """A `Detector` that returns whatever it was given.
