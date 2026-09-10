@@ -248,10 +248,51 @@ The ground truth, meanwhile, is fine — green boxes sit on real bottles and
 cans. The harness is not the problem, which is the other thing only the images
 could establish.
 
+### Scene-box filtering, measured
+
+```
+   conf    preds before -> after    matched    precision
+   0.01      4920 ->  4422        183 -> 183   3.7% -> 4.1%
+   0.05      1218 ->   853         60 ->  60   4.9% -> 7.0%
+   0.15       321 ->   165         12 ->  12   3.7% -> 7.3%
+```
+
+**498 predictions removed, zero true positives lost, precision roughly doubled
+at every threshold.** Exactly what a filter should do: it deleted only things
+that were never going to match anything.
+
+### But raw precision on WaRP is not measurable
+
+WaRP labels **1.74 objects per image**, in frames the diagnostic pictures show
+to be packed with dozens. It annotates its own 28 target classes and ignores
+everything else present — film, paper, bags, food, all unlabelled.
+
+So a correct detection of a plastic wrapper scores as a false positive, not
+because the model was wrong but because the dataset never labelled wrappers.
+Raw precision here measures the annotation policy at least as much as the
+model, and 7% is close to meaningless as an absolute number.
+
+`--sweep` now reports a **`fair`** column alongside it, counting a false
+positive only for classes the dataset actually annotates. Even that is an upper
+bound on error: annotation may not be exhaustive for those classes either.
+
+**What each number is worth on this dataset:**
+
+| Metric | Trustworthy here? |
+| --- | --- |
+| Recall | **Yes.** Of what WaRP labelled, we found 52.6%. |
+| Raw precision | **No.** Punishes correct detections of unlabelled material. |
+| `fair` precision | Partly. Better, still a lower bound. |
+| Routing accuracy | Yes, on matched instances only. |
+
+This is a limitation of the *dataset*, not of the harness, and it will not
+apply to your own footage — because you will label exhaustively.
+
 ### Where this leaves the plan
 
 - Precision: **prompt scoping** (242 → 5 false positives) plus **area
-  filtering** (the scene boxes). Both are configuration.
+  filtering** (498 predictions, no true positives lost). Both are
+  configuration, and both are real wins that transfer.
 - Recall: the objects *are* being found at 0.01. The remaining work is score
   calibration and thresholding, not necessarily training.
 - Fine-tuning is still worth doing, but it is no longer the only option, and
