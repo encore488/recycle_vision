@@ -14,7 +14,7 @@ from PIL import Image
 
 from recyclevision import RoutingPolicy, SortingPipeline, annotate, vocabulary
 from recyclevision.policy import PolicyError
-from recyclevision.vocabulary import Vocabulary
+from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_DIR = PROJECT_ROOT / "images"
@@ -82,8 +82,19 @@ if not policies:
     st.stop()
 policy_names = dict(policies)
 
+
+def _vocabulary_order(path: Path) -> tuple[int, str]:
+    """Put the project default first so the picker opens on the current best.
+
+    Older vocabularies stay selectable — comparing against them is how a
+    regression gets spotted — but they should not be what a visitor sees first.
+    """
+    return (0 if path == DEFAULT_VOCAB else 1, path.name)
+
+
 detector_options: list[tuple[str, str]] = [
-    (str(path), f"Open vocabulary · {Vocabulary.load(path).name}") for path in vocabulary.discover()
+    (str(path), f"Open vocabulary · {Vocabulary.load(path).name}")
+    for path in sorted(vocabulary.discover(), key=_vocabulary_order)
 ]
 detector_options.append((COCO, "Stock COCO (baseline)"))
 detector_labels = dict(detector_options)

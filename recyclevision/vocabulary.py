@@ -20,7 +20,7 @@ from pathlib import Path
 import yaml
 
 VOCAB_DIR = Path(__file__).resolve().parent.parent / "vocab"
-DEFAULT_VOCAB = VOCAB_DIR / "waste_v1.yaml"
+DEFAULT_VOCAB = VOCAB_DIR / "waste_v2.yaml"
 
 #: Embeddings live beside their vocabulary, sharing its stem.
 EMBEDDING_SUFFIX = ".pt"

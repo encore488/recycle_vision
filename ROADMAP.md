@@ -3,8 +3,8 @@
 Working plan for taking RecycleVision from prototype to a demo-able, resume-ready,
 and eventually genuinely useful tool.
 
-**Status:** v0.4 — open-vocabulary detection. 100% detection precision and 92% routing
-accuracy on the sample images, up from 75% / 33% on stock COCO.
+**Status:** v0.5 — open-vocabulary detection, vocabulary v2. 100% detection precision,
+85% class accuracy, 100% routing accuracy on the (small, fitted) sample set.
 [Live demo](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/).
 
 ## The product, in one sentence
@@ -210,11 +210,19 @@ this fixes most of it without a single labelled image.
 - [x] Annotations label the *item*, not the bin — nine chips reading "Mixed Recycling"
       carried no information — plus a colour legend so a saved image explains itself.
 
-| Metric | COCO | Open vocabulary |
-| --- | --- | --- |
-| Detection precision | 75% | **100%** |
-| Routing accuracy | 33% | **92%** |
-| Recall | not measured | **93%** |
+| Metric | COCO | Open vocab v1 | Open vocab v2 |
+| --- | --- | --- | --- |
+| Detection precision | 75% | 100% | **100%** |
+| Class accuracy | — | 62% | **85%** |
+| Routing accuracy | 33% | 92% | **100%** |
+
+Class accuracy was added after the repo owner pointed out that the annotated
+pictures were "badly mislabeled" — and they were. Routing accuracy forgives any
+mislabel that lands in the right bin, so v1's 92% concealed a 38% mislabel rate.
+Reporting the two separately is the only honest way to show it.
+
+**These are fitted numbers, not predictions.** The v2 vocabulary was tuned against
+these same two images. The first real measurement is the first image it has not seen.
 
 Still zero-shot: it has never seen a labelled conveyor belt. Milestone 4 is unchanged,
 but its baseline is now much higher and its argument is different — training has to beat

@@ -1,0 +1,74 @@
+# Open-vocabulary prompts, v2 — designed backwards from the bins.
+#
+# v1 scored 100% detection precision but only 62% class accuracy: it named
+# 38% of the objects it found wrongly. Every one of those errors was a
+# distinction the vocabulary asked for but the routing did not need:
+#
+#   "aluminum drink can" fired on a steel food can   (both -> recycling)
+#   "metal bottle cap"   fired on a can end          (both -> recycling)
+#   "aluminum drink can" fired on a plastic bottle   (both -> recycling)
+#   "styrofoam"          fired on a sheet of paper   (different bins - a real error)
+#
+# The rule this file follows: ask for a distinction only where it changes a
+# routing decision. Separating aluminium from steel costs accuracy and buys
+# nothing, because both go in the same bin and a MRF's magnet separates them
+# downstream anyway. So v2 merges them.
+#
+# The one genuinely wrong routing in v1 -- paper read as foam -- is addressed
+# by adding the prompt that was missing ("sheet of paper") and deleting the one
+# that over-fired. See the note beside the foam classes below.
+#
+# Rebuild embeddings after editing:
+#     python scripts/build_vocab_embeddings.py vocab/waste_v2.yaml
+
+name: Waste v2
+description: >-
+  Waste classes drawn at the granularity that changes a bin decision: metals
+  merged, fibre separated, film and foam named specifically.
+model: yoloe-11s-seg.pt
+
+classes:
+  # Metal -- one class. Aluminium vs steel does not change any bin in any
+  # shipped policy, and asking for the distinction was v1's largest error.
+  - metal can
+  - metal bottle cap
+
+  # Plastic containers
+  - plastic bottle
+  - plastic bottle cap
+  - plastic tub
+  - plastic cup
+
+  # Plastic film -- its own destination everywhere (a MRF "tangler").
+  - plastic bag
+  - plastic wrapper
+
+  # NO foam class. v1's "styrofoam" fired on a sheet of paper, and every
+  # replacement tested -- "foam cup or tray", "white foam packaging",
+  # "polystyrene foam block" -- captured the same sheet of paper instead of
+  # anything foam. Neither validation image contains foam, so the prompt had
+  # nothing to match and settled on the nearest pale flat object, sending
+  # recyclable paper to landfill.
+  #
+  # A prompt that cannot be shown to work is a liability, not a gap: removing
+  # it takes those detections back to "sheet of paper", which is correct.
+  # Reinstate it when there is an image with foam in it to test against.
+
+  # Glass -- container vs tableware IS a bin distinction (a tumbler ruins a
+  # batch of container glass), so unlike the metals this split stays.
+  #
+  # "drinking glass" alone lost to "metal can" on a transparent tumbler once
+  # the metals were merged; "empty drinking glass" wins it back. "clear glass
+  # tumbler" also fired on the plastic container, so it was rejected.
+  - glass bottle
+  - glass jar
+  - empty drinking glass
+
+  # Fibre
+  - cardboard box
+  - sheet of paper
+  - newspaper
+  - paper cup
+
+  # Organics
+  - food waste

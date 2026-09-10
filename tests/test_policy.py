@@ -199,3 +199,32 @@ class TestShippedPolicySet:
             policy = RoutingPolicy.load(path)
             for label in ("person", "car", "dog"):
                 assert policy.route(make_detection(label)) is None, f"{path.name}: {label}"
+
+
+class TestVocabularyCoverage:
+    """Every shipped policy must have a rule for every shipped vocabulary class.
+
+    An uncovered class is not a loud failure: the policy's `default: ignore`
+    silently drops the detection as non-waste, so the item vanishes from every
+    count with nothing to show it was ever seen. This test exists because that
+    is exactly what happened to `drinking glass` and `paper`.
+    """
+
+    def test_every_policy_covers_every_vocabulary(self):
+        from recyclevision.pipeline import DEFAULT_POLICY
+        from recyclevision.vocabulary import VOCAB_DIR, Vocabulary
+
+        policies = sorted(DEFAULT_POLICY.parent.glob("*.yaml"))
+        vocabularies = sorted(VOCAB_DIR.glob("*.yaml"))
+        assert policies and vocabularies
+
+        gaps = {}
+        for policy_path in policies:
+            policy = RoutingPolicy.load(policy_path)
+            for vocab_path in vocabularies:
+                vocab = Vocabulary.load(vocab_path)
+                missing = [c for c in vocab.classes if not policy.covers(c)]
+                if missing:
+                    gaps[f"{policy_path.name} x {vocab_path.name}"] = missing
+
+        assert not gaps, f"vocabulary classes with no routing rule: {gaps}"

@@ -348,3 +348,60 @@ rules:
     rationale: A "tangler". Bags wrap around the screen shafts and force the line to stop.
 
   plastic film wrapper: *film
+
+  # --- vocab/waste_v2.yaml ---------------------------------------------------
+
+  metal can:
+    bin: recycling
+    item: Metal can
+    material: metal
+    handling: Empty and rinse. Push the lid inside the can before binning.
+    certainty: high
+    rationale: >-
+      Aluminium and steel are the most valuable materials in the kerbside
+      stream, and both go in the same bin -- which is why this vocabulary does
+      not try to tell them apart.
+
+  plastic wrapper:
+    bin: landfill
+    item: Plastic film
+    material: film plastic
+    handling: Never kerbside -- film tangles the sorting screens. Supermarkets often take it back.
+    certainty: high
+    rationale: A "tangler". Film wraps the screen shafts and stops the line.
+
+  foam cup or tray:
+    bin: landfill
+    item: Polystyrene foam
+    material: expanded polystyrene
+    handling: Almost never accepted kerbside; a few areas run drop-off points.
+    certainty: high
+
+  sheet of paper:
+    bin: recycling
+    item: Paper
+    material: paper
+    handling: Keep dry. Wet paper is downgraded or rejected.
+    certainty: high
+
+  drinking glass:
+    bin: landfill
+    item: Drinking glass
+    material: glass
+    handling: Wrap before binning if broken.
+    certainty: high
+    rationale: >-
+      Not container glass. Drinking and tempered glass melt at a different
+      temperature and will ruin a batch of recycled container glass.
+
+  paper: *mixed_paper
+
+  empty drinking glass:
+    bin: landfill
+    item: Drinking glass
+    material: glass
+    handling: Wrap before binning if broken.
+    certainty: high
+    rationale: >-
+      Not container glass. Tableware and tempered glass melt at a different
+      temperature and will ruin a batch of recycled container glass.
