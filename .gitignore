@@ -20,10 +20,13 @@ models/*.onnx
 outputs/*
 out/
 
-# Model weights fetched at runtime
-yolov8*.pt
-yoloe*.pt
-mobileclip*.ts
+# Model weights fetched at runtime, into the working directory.
+# Deliberately broad: ultralytics downloads whatever a script asks for
+# (yolov8, yolo11, yoloe, sam, mobile_sam, mobileclip), and specific patterns
+# kept letting new ones through.
+*.pt
+*.ts
+!vocab/*.pt
 
 # Streamlit
 .streamlit/secrets.toml
@@ -39,3 +42,6 @@ mobileclip*.ts
 # OS
 .DS_Store
 Thumbs.db
+# Training runs and datasets
+runs/
+datasets/
