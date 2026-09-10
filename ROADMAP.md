@@ -3,7 +3,7 @@
 Working plan for taking RecycleVision from prototype to a demo-able, resume-ready,
 and eventually genuinely useful tool.
 
-**Status:** v0.7 — training pipeline ready. Batch mode, export and impact estimates. Open-vocabulary detection with vocabulary v2. 100% detection precision,
+**Status:** v0.8 — training pipeline plus external-dataset ingestion. Batch mode, export and impact estimates. Open-vocabulary detection with vocabulary v2. 100% detection precision,
 85% class accuracy, 100% routing accuracy on the (small, fitted) sample set.
 [Live demo](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/).
 
@@ -233,7 +233,17 @@ a good open-vocabulary model, not a bad closed-set one.
 
 Separates "used a model" from "understands ML". Gated on real data.
 
-- [ ] **Capture conveyor footage.** The blocking dependency for everything below.
+- [ ] **Import SortWaste and measure zero-shot on it.** The first honest number this
+      project will have: everything scored so far rests on 2 clean photos, and the
+      vocabulary was tuned while looking at them. See [docs/DATA_PLAN.md](docs/DATA_PLAN.md).
+- [x] External-dataset import with class translation (`mappings/*.yaml`), refusing
+      unmapped classes rather than dropping them into the background.
+- [x] `scripts/zeroshot_eval.py` — score a vocabulary against labelled ground truth,
+      so prompt tuning is measured rather than guessed.
+- [ ] **Tune prompts against SortWaste's val split.** Cheapest lever available, but it
+      needs data the prompts have not seen — which is exactly what we have lacked.
+- [ ] **Capture own conveyor footage.** Still the thing that unlocks item-level
+      accuracy: no public dataset can express container glass vs drinking glass.
 - [ ] Use the open-vocabulary detector to *pre-label* that footage, then correct it by
       hand. Far cheaper than labelling from scratch, and the QA harness is already the
       correcting interface.

@@ -1,0 +1,57 @@
+# SortWaste -> RecycleVision vocabulary (waste_v2)
+#
+# ⚠️ VERIFY THE CLASS NAMES BEFORE RELYING ON THIS FILE.
+#
+# These keys were written from a second-hand description of the dataset, not
+# from the dataset itself, which is unreachable from the development sandbox.
+# The exact strings very likely differ in case, spacing or wording.
+#
+#   python scripts/import_dataset.py <sortwaste>/data.yaml \
+#       --mapping mappings/sortwaste.yaml --out datasets/sortwaste
+#
+# lists every class it finds and refuses to run until each has a rule, so the
+# fix is mechanical: run it, read the error, correct the keys here.
+#
+# On the translation itself: SortWaste labels MATERIALS. This project routes
+# BINS, from ITEMS -- a finer distinction, and going this direction loses
+# information permanently (see `cannot_express`). The mapping is therefore
+# honest rather than clever: no rule pretends to recover a distinction the
+# source labels never made.
+
+name: SortWaste
+source: https://sortwaste.di.ubi.pt/
+description: >-
+  Top-down conveyor imagery from a mechanical-biological treatment facility.
+  Material-level classes, bounding boxes only, single facility.
+
+mapping:
+  # --- plastics -----------------------------------------------------------
+  PET: plastic bottle
+  PET Oil: plastic bottle
+  HDPE: plastic bottle
+  PP: plastic tub
+  Film: plastic wrapper
+
+  # --- metal --------------------------------------------------------------
+  # Neither SortWaste nor waste_v2 separates ferrous from aluminium, and for
+  # the same reason: both route identically. A rare case where the two
+  # taxonomies already agree.
+  Metal: metal can
+
+  # --- fibre --------------------------------------------------------------
+  ECAL: paper cup          # beverage carton — poly-lined fibre, same handling
+  Cardboard: cardboard box
+  Paper: sheet of paper
+
+  # --- deliberately dropped ----------------------------------------------
+  # `null` means "do not import". Anything genuinely *unmapped* raises instead
+  # of being discarded quietly.
+  Other: null
+  Unknown: null
+
+cannot_express:
+  - container glass vs drinking glass — the case the README opens with
+  - plastic-lined paper cup vs plain paper; ECAL is the nearest available label
+  - rigid plastic tub vs plastic cup
+  - metal can vs metal bottle cap
+  - anything organic
