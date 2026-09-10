@@ -172,6 +172,20 @@ def main(argv: list[str] | None = None) -> int:
         if index % 25 == 0 or index == len(images):
             print(f"  {index}/{len(images)}")
 
+    # Which of our classes this dataset actually annotates.
+    #
+    # WaRP labels 1.74 objects per image in frames containing dozens: it
+    # annotates its own 28 target classes and ignores everything else present.
+    # A prediction of "plastic wrapper" on a real plastic wrapper therefore
+    # scores as a false positive, because the dataset never labelled wrappers
+    # -- not because the model was wrong.
+    #
+    # Raw precision on such a dataset measures the annotation policy as much as
+    # the model. Restricting false positives to classes the dataset does label
+    # is fairer. It is still only an upper bound on error: even for those
+    # classes the annotation may not be exhaustive.
+    labelled_classes = {label for _p, truth in per_image for label, _b in truth}
+
     # Where the model put its boxes, before any threshold is applied.
     overlaps = [v for predictions, truth in per_image for v in best_overlaps(predictions, truth)]
     print(f"\nwhere {len(overlaps)} prediction(s) landed, at conf >= {floor}")
@@ -197,30 +211,42 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.sweep:
         print("\nby confidence threshold")
-        print(f"  {'conf':>6}{'preds':>8}{'matched':>9}{'precision':>11}{'recall':>9}")
+        print("  ('fair' counts a false positive only for classes this dataset labels)")
+        header = f"  {'conf':>6}{'preds':>8}{'matched':>9}{'prec':>8}{'fair':>8}{'recall':>9}"
+        print(header)
         recalls: list[float] = []
+        fairs: list[float] = []
         for threshold in thresholds:
             kept = [
                 ([p for p in predictions if p[2] >= threshold], truth)
                 for predictions, truth in per_image
             ]
-            total_matched = total_found = 0
+            total_matched = total_found = scoreable = 0
             for predictions, truth in kept:
                 result = match_detections(predictions, truth, threshold=args.iou)
                 total_matched += len(result.pairs)
                 total_found += len(result.pairs) + len(result.false_positives)
+                scoreable += len(result.pairs) + sum(
+                    1 for label in result.false_positives if label in labelled_classes
+                )
             findable = sum(len(truth) for _p, truth in kept)
             precision = total_matched / total_found if total_found else 0.0
+            fair = total_matched / scoreable if scoreable else 0.0
             recall = total_matched / findable if findable else 0.0
             recalls.append(recall)
+            fairs.append(fair)
             print(
                 f"  {threshold:>6.2f}{total_found:>8}{total_matched:>9}"
-                f"{precision:>10.1%}{recall:>9.1%}"
+                f"{precision:>7.1%}{fair:>8.1%}{recall:>9.1%}"
             )
         # Judge from the curve, not from a canned sentence. The histogram above
         # can look damning while this table shows the detections plainly exist,
         # and an earlier version of this script printed exactly that
         # contradiction.
+        print(f"\n  this dataset annotates only: {', '.join(sorted(labelled_classes))}")
+        if fairs:
+            print(f"  best 'fair' precision across thresholds: {max(fairs):.1%}")
+
         best = max(recalls) if recalls else 0.0
         at_default = recalls[thresholds.index(0.15)] if 0.15 in thresholds else 0.0
         print()
