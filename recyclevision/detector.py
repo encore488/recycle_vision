@@ -8,10 +8,27 @@ notices -- and the tests, which run against a stub, need no weights at all.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .models import BoundingBox, Detection
+from .vocabulary import DEFAULT_VOCAB, Vocabulary
 from .weights import WeightsChoice, resolve_weights
+
+
+def _to_detections(result, names) -> list[Detection]:
+    """Convert an ultralytics result into the project's own vocabulary."""
+    detections = []
+    for box in result.boxes:
+        x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
+        detections.append(
+            Detection(
+                label=names[int(box.cls[0])],
+                confidence=float(box.conf[0]),
+                box=BoundingBox(x1, y1, x2, y2),
+            )
+        )
+    return detections
 
 
 @runtime_checkable
@@ -57,18 +74,57 @@ class YoloDetector:
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
         result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        return _to_detections(result, self._model.names)
 
-        detections = []
-        for box in result.boxes:
-            x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
-            detections.append(
-                Detection(
-                    label=self._model.names[int(box.cls[0])],
-                    confidence=float(box.conf[0]),
-                    box=BoundingBox(x1, y1, x2, y2),
-                )
-            )
-        return detections
+
+class OpenVocabularyDetector:
+    """YOLOE told what to look for in words.
+
+    The point of this class is that its class list is configuration. COCO has
+    no label for a drink can, so a COCO detector reports one as "cup" or
+    "bowl" and no downstream rule can undo that. Here the vocabulary simply
+    asks for "aluminum drink can", and the detector answers in those terms.
+
+    Text embeddings are loaded from the cache built by
+    `scripts/build_vocab_embeddings.py`, never computed here: the text encoder
+    is an order of magnitude larger than the detector, and needing it at
+    request time would make the app undeployable on a small host.
+    """
+
+    def __init__(self, vocabulary: Vocabulary | None = None) -> None:
+        from ultralytics import YOLOE  # deferred: heavy import
+
+        self.vocabulary = vocabulary or Vocabulary.load(DEFAULT_VOCAB)
+        embeddings = self.vocabulary.load_embeddings()
+
+        self._model = YOLOE(self.vocabulary.model)
+        self._model.set_classes(self.vocabulary.classes, embeddings)
+
+    @property
+    def name(self) -> str:
+        return f"{Path(self.vocabulary.model).stem} · {self.vocabulary.name}"
+
+    @property
+    def class_names(self) -> list[str]:
+        return list(self.vocabulary.classes)
+
+    @property
+    def weights(self) -> WeightsChoice:
+        """Presented as a custom model: its vocabulary is purpose-built.
+
+        Still not a *trained* waste model -- the detector is zero-shot and
+        has never seen a labelled conveyor belt -- but the everyday-objects
+        caveat that applies to COCO does not apply here.
+        """
+        return WeightsChoice(
+            path=self.vocabulary.model,
+            is_custom=True,
+            display_name_override=self.name,
+        )
+
+    def detect(self, image, confidence: float = 0.25) -> list[Detection]:
+        result = self._model.predict(image, conf=confidence, verbose=False)[0]
+        return _to_detections(result, self._model.names)
 
 
 class StubDetector:

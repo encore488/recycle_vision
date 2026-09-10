@@ -226,3 +226,125 @@ rules:
     material: mixed plastic
     handling: Bonded nylon and plastic cannot be separated.
     certainty: high
+
+  # ==========================================================================
+  # Open-vocabulary classes (vocab/waste_v1.yaml)
+  #
+  # These are the terms an open-vocabulary detector answers in. They are far
+  # more specific than COCO's tableware nouns, so most of the ambiguity that
+  # forces a `certainty: low` above simply does not arise here: the detector
+  # says "aluminum drink can", not "cup".
+  # ==========================================================================
+
+  aluminum drink can: &metal_container
+    bin: recycling
+    item: Metal can
+    material: metal
+    handling: Empty and rinse. Leave the lid inside the can if you removed it.
+    certainty: high
+    rationale: >-
+      Aluminium and steel are the most valuable materials in the kerbside
+      stream and are recycled indefinitely without loss of quality.
+
+  steel food can: *metal_container
+  metal can lid: *metal_container
+
+  metal bottle cap:
+    bin: recycling
+    item: Metal bottle cap
+    material: metal
+    handling: Collect caps inside a steel can and crimp it shut before binning.
+    certainty: low
+    rationale: >-
+      Loose caps are below the size threshold the sorting screens can catch
+      and are lost as fines. Captured inside a can, they are recovered.
+
+  plastic bottle:
+    bin: recycling
+    item: Plastic bottle
+    material: plastic
+    handling: Empty and rinse. Leave the cap screwed on.
+    certainty: high
+
+  plastic bottle cap:
+    bin: recycling
+    item: Plastic cap
+    material: plastic
+    handling: Screw it back onto its bottle rather than binning it loose.
+    certainty: low
+    rationale: Too small to sort on its own; recovered only while attached to a bottle.
+
+  plastic tub:
+    bin: recycling
+    item: Plastic tub
+    material: plastic
+    handling: Rinse out food residue. Lids off unless your program says otherwise.
+    certainty: high
+    rationale: >-
+      Yogurt and margarine tubs are usually PP and widely accepted, though
+      some programs still exclude them -- check locally.
+
+  glass bottle: &container_glass
+    bin: recycling
+    item: Glass container
+    material: glass
+    handling: Empty and rinse. Leave labels on.
+    certainty: high
+
+  glass jar: *container_glass
+
+  cardboard box:
+    bin: recycling
+    item: Cardboard
+    material: paper
+    handling: Flatten it. Greasy or wax-lined board is not recyclable.
+    certainty: high
+
+  newspaper: &mixed_paper
+    bin: recycling
+    item: Paper
+    material: paper
+    handling: Keep dry. Wet paper is downgraded or rejected.
+    certainty: high
+
+  food waste:
+    bin: compost
+    item: Food waste
+    material: organic
+    handling: Compost, or use a kerbside organics collection where offered.
+    certainty: high
+
+  plastic cup:
+    bin: landfill
+    item: Plastic cup
+    material: plastic
+    handling: Disposable cups are rarely accepted; check locally before binning.
+    certainty: low
+    rationale: A rigid PET cup may be recyclable; a thin PS one is not. The form does not say which.
+
+  paper cup:
+    bin: landfill
+    item: Paper cup
+    material: lined paper
+    handling: The plastic lining cannot be separated by a normal mill.
+    certainty: high
+    rationale: Plastic-lined and rejected by most programs, despite looking like plain paper.
+
+  styrofoam:
+    bin: landfill
+    item: Polystyrene foam
+    material: expanded polystyrene
+    handling: Almost never accepted kerbside; a few areas run drop-off points.
+    certainty: high
+
+  plastic bag: &film
+    bin: landfill
+    item: Plastic film
+    material: film plastic
+    handling: >-
+      Never in the kerbside bin -- film tangles the sorting screens. Many
+      supermarkets take clean film back.
+    certainty: high
+    rationale: A "tangler". Bags wrap around the screen shafts and force the line to stop.
+
+  plastic film wrapper: *film

@@ -8,6 +8,7 @@ Domain models carry no vision dependencies, so importing this package is
 cheap; torch is only pulled in when a real detector is constructed.
 """
 
+from . import vocabulary
 from .models import (
     Bin,
     BoundingBox,
@@ -19,6 +20,7 @@ from .models import (
 from .pipeline import DEFAULT_POLICY, SortingPipeline
 from .policy import PolicyError, RoutingPolicy
 from .render import annotate
+from .vocabulary import Vocabulary, VocabularyError
 from .weights import WeightsChoice, resolve_weights
 
 __version__ = "0.3.0"
@@ -34,7 +36,10 @@ __all__ = [
     "RoutingPolicy",
     "SortResult",
     "SortingPipeline",
+    "Vocabulary",
+    "VocabularyError",
     "WeightsChoice",
     "annotate",
     "resolve_weights",
+    "vocabulary",
 ]

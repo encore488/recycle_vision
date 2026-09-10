@@ -20,8 +20,10 @@ models/*.onnx
 outputs/*
 out/
 
-# Stock weights fetched at runtime
+# Model weights fetched at runtime
 yolov8*.pt
+yoloe*.pt
+mobileclip*.ts
 
 # Streamlit
 .streamlit/secrets.toml

@@ -13,6 +13,7 @@ from pathlib import Path
 from .detector import Detector
 from .models import SortResult
 from .policy import RoutingPolicy
+from .vocabulary import DEFAULT_VOCAB
 
 DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "policies" / "household.yaml"
 
@@ -29,15 +30,25 @@ class SortingPipeline:
         cls,
         policy_path: str | Path = DEFAULT_POLICY,
         weights_path: str | Path | None = None,
+        vocabulary_path: str | Path | None = DEFAULT_VOCAB,
     ) -> SortingPipeline:
-        """Construct the real pipeline, loading weights and policy from disk."""
-        from .detector import YoloDetector  # deferred: pulls in torch
+        """Construct the real pipeline, loading everything from disk.
+
+        Defaults to the open-vocabulary detector, which can name a drink can.
+        Pass `vocabulary_path=None` for the closed-set COCO detector, which
+        cannot -- kept because it is the baseline every measurement is
+        compared against.
+        """
+        from .detector import OpenVocabularyDetector, YoloDetector  # deferred: pulls in torch
+        from .vocabulary import Vocabulary
         from .weights import resolve_weights
 
-        return cls(
-            detector=YoloDetector(resolve_weights(weights_path)),
-            policy=RoutingPolicy.load(policy_path),
-        )
+        if vocabulary_path is not None and weights_path is None:
+            detector = OpenVocabularyDetector(Vocabulary.load(vocabulary_path))
+        else:
+            detector = YoloDetector(resolve_weights(weights_path))
+
+        return cls(detector=detector, policy=RoutingPolicy.load(policy_path))
 
     def sort(self, image, confidence: float = 0.25) -> SortResult:
         """Run the full pipeline over one image."""

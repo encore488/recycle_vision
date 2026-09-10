@@ -29,10 +29,41 @@ A material-first design gets the first three wrong. RecycleVision routes to bins
 directly, attaches handling instructions, and flags the items where it genuinely
 cannot be sure.
 
+## Two detectors
+
+The project ships two, and measures both. The difference is the whole story:
+
+| | Stock COCO | Open vocabulary |
+| --- | --- | --- |
+| Model | YOLOv8s | YOLOE + `vocab/waste_v1.yaml` |
+| Class list | Fixed at training time, 80 everyday objects | Given in words, editable in a YAML file |
+| A steel can | "bowl" or "cup" | "steel food can" |
+| Detection precision | 75% | **100%** |
+| Routing accuracy | 33% | **92%** |
+
+COCO has no class for a drink can — the most common item in a recycling stream —
+so a COCO detector reports one as tableware and no downstream rule can undo
+that. An open-vocabulary detector is told what to look for in words, so the
+class list becomes configuration. `vocab/waste_v1.yaml` simply asks for
+`aluminum drink can`.
+
+Turning those words into embeddings needs a text encoder ten times the size of
+the detector, so that happens once, offline, and the 40KB result is committed.
+At runtime nothing but the cached embeddings is loaded — which is what keeps
+the app deployable on a small host.
+
+```bash
+# Only when the vocabulary changes:
+pip install -r requirements-vocab.txt
+python scripts/build_vocab_embeddings.py vocab/waste_v1.yaml
+```
+
 ## How it works
 
 ```
 image ──▶ Detector ──▶ Detection(class, confidence, box)
+             ▲
+     vocab/*.yaml (open-vocabulary class prompts)
                             │
                             ▼
                      RoutingPolicy  ◀── policies/*.yaml
@@ -139,37 +170,41 @@ Verdicts separate the two failure modes, because they have different fixes:
 
 ### Current scores
 
-Nine detections over the two sample images, graded by hand and confirmed by the
-repo owner (`qa/verdicts.json`, `qa/verdicts_mrf.json`):
+Graded by hand over the two sample images, confirmed by the repo owner
+(`qa/verdicts.json`, `qa/verdicts_mrf.json`, `qa/openvocab/verdicts.json`):
 
-| | Household policy | MRF policy |
-| --- | --- | --- |
-| Detection precision | 75% | 75% |
-| Routing accuracy | 33% | **83%** |
-| End-to-end correct | 25% | **62%** |
+| | COCO + household | COCO + MRF | **Open vocab + household** |
+| --- | --- | --- | --- |
+| Detections | 9 | 9 | 14 |
+| Detection precision | 75% | 75% | **100%** |
+| Routing accuracy | 33% | 83% | **92%** |
+| End-to-end correct | 25% | 62% | **92%** |
+| Recall | not measured | not measured | **93%** |
 
-**Same model, same images, same detections — only the policy file changed.**
-Detection precision is identical because the detector never changed; routing
-accuracy tripled because the MRF policy knows there is no tableware on a
-sorting line, so a "cup" is a can. That is what routing-rules-as-data buys.
+Two independent wins, and it matters which is which:
 
-The remaining errors split cleanly by cause:
+- **COCO → MRF policy** tripled routing accuracy with *no change to the model*.
+  Detection precision stayed at 75%, because a policy cannot fix a box drawn on
+  an empty conveyor belt.
+- **COCO → open vocabulary** took detection precision to 100% and found 14 real
+  objects where COCO found 7, because the detector is finally being asked for
+  the right things.
 
-- **Two false positives** on an empty seam in the conveyor belt. Only a better
-  detector fixes those.
-- **One wrong bin under the MRF policy**: a drinking glass, which the household
-  policy gets right and the MRF policy does not. The two policies genuinely
-  disagree here and one of them has to be wrong, because COCO cannot tell a
-  drinking glass from a can.
+What is left:
 
-Nine detections is a small sample and the MRF policy was written after seeing
-these images, so treat 83% as a ceiling rather than an expectation. The point
-is the mechanism, not the number. Re-measure on new footage before trusting it.
+- **One wrong bin**: a sheet of paper called `styrofoam`, sent to landfill
+  instead of recycling.
+- **One missed object**: a drinking glass produced no detection at all. Recall
+  is only measured because a grader recorded the miss by hand — a contact sheet
+  cannot show an object that produced no box.
+- **One unsure**: a small bright fragment on the belt that may or may not be an
+  item.
 
-One result is worth calling out the other way: in the second sample a drinking
-glass was detected as `cup` — the wrong class, but under the household policy
-both route to landfill, so the bin was still right. Bin-first routing absorbs
-misreads that never change the destination, and only surfaces the ones that do.
+Sample-size caveats, stated plainly: 14 detections over 2 images is small, the
+MRF policy and the vocabulary were both written after seeing these images, and
+neither has been tested on footage it has not seen. Treat these as a floor for
+"is the mechanism working", not as an accuracy claim. The QA harness exists so
+the next measurement is cheap.
 
 ## Writing a policy
 

@@ -17,6 +17,7 @@ from PIL import Image
 from .models import SortResult
 from .pipeline import DEFAULT_POLICY, SortingPipeline
 from .render import annotate
+from .vocabulary import DEFAULT_VOCAB
 
 
 def _as_dict(result: SortResult, source: str) -> dict:
@@ -81,7 +82,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("images", nargs="+", type=Path, help="image files to sort")
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY, help="routing policy YAML")
-    parser.add_argument("--weights", type=Path, default=None, help="model weights (.pt)")
+    parser.add_argument(
+        "--weights",
+        type=Path,
+        default=None,
+        help="COCO model weights (.pt); implies the closed-set detector",
+    )
+    parser.add_argument(
+        "--coco",
+        action="store_true",
+        help="use the stock COCO detector instead of the open vocabulary",
+    )
     parser.add_argument("--confidence", type=float, default=0.15, help="detection threshold")
     parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
     parser.add_argument(
@@ -93,7 +104,11 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         parser.error(f"no such image(s): {', '.join(str(p) for p in missing)}")
 
-    pipeline = SortingPipeline.build(policy_path=args.policy, weights_path=args.weights)
+    pipeline = SortingPipeline.build(
+        policy_path=args.policy,
+        weights_path=args.weights,
+        vocabulary_path=None if (args.coco or args.weights) else DEFAULT_VOCAB,
+    )
 
     if args.save_annotated:
         args.save_annotated.mkdir(parents=True, exist_ok=True)

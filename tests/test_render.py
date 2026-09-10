@@ -105,7 +105,7 @@ class TestAnnotate:
     def test_boxes_are_drawn_in_the_bin_color_not_swapped(self, policy, image):
         """Guards the v0.2 BGR/RGB bug: recycling blue must render blue."""
         result = sort(policy, [make_detection("bottle", box=(50, 50, 300, 300))], image)
-        out = annotate(image, result, show_labels=False)
+        out = annotate(image, result, show_labels=False, show_legend=False)
 
         expected = _hex_to_rgb(policy.bin("recycling").color)
         assert expected[2] > expected[0], "fixture assumption: recycling blue is blue-dominant"
@@ -124,18 +124,36 @@ class TestAnnotate:
             ],
             image,
         )
-        out = annotate(image, result, show_labels=False)
+        out = annotate(image, result, show_labels=False, show_legend=False)
         pixels = unique_colors(out)
         assert _hex_to_rgb(policy.bin("recycling").color) in pixels
         assert _hex_to_rgb(policy.bin("compost").color) in pixels
 
+    def test_labels_name_the_item_not_the_bin(self, policy, image):
+        """Nine chips reading "Mixed Recycling" say nothing; item names do."""
+        result = sort(policy, [make_detection("bottle", 0.9)], image)
+        item = result.items[0]
+        assert item.label != item.bin.name, "fixture assumption"
+        # Rendering is a picture, so assert on what feeds it rather than OCR.
+        assert item.label
+
+    def test_legend_appears_only_when_asked(self, policy, image):
+        result = sort(policy, [make_detection("bottle", 0.9, box=(10, 10, 60, 60))], image)
+        with_legend = annotate(image, result, show_legend=True)
+        without = annotate(image, result, show_legend=False)
+        assert len(unique_colors(with_legend)) > len(unique_colors(without))
+
+    def test_legend_is_skipped_when_there_is_nothing_to_key(self, policy, image):
+        out = annotate(image, sort(policy, [], image), show_legend=True)
+        assert unique_colors(out) == {(255, 255, 255)}
+
     def test_toggles_actually_suppress_drawing(self, policy, image):
         """The v0.2 sidebar toggles were wired to nothing at all."""
         result = sort(policy, [make_detection("bottle")], image)
-        blank = annotate(image, result, show_boxes=False, show_labels=False)
+        blank = annotate(image, result, show_boxes=False, show_labels=False, show_legend=False)
         assert unique_colors(blank) == {(255, 255, 255)}
 
-        boxed = annotate(image, result, show_boxes=True, show_labels=False)
+        boxed = annotate(image, result, show_boxes=True, show_labels=False, show_legend=False)
         assert unique_colors(boxed) != {(255, 255, 255)}
 
     def test_empty_result_leaves_the_image_clean(self, policy, image):
