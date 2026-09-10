@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image  # noqa: E402
 
+from recyclevision.detector import DEFAULT_IMGSZ  # noqa: E402
 from recyclevision.evaluate import DEFAULT_IOU, match_detections, score_routing  # noqa: E402
 from recyclevision.external import MappingError, read_yolo_data_yaml  # noqa: E402
 from recyclevision.models import BoundingBox  # noqa: E402
@@ -88,6 +89,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--split", default="val", choices=["train", "val"])
     parser.add_argument("--confidence", type=float, default=0.15)
     parser.add_argument("--iou", type=float, default=DEFAULT_IOU)
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=DEFAULT_IMGSZ,
+        help="inference resolution. A 1920x1080 frame at the old 640 default "
+        "shrinks every object threefold; raise it if recall looks impossible.",
+    )
     parser.add_argument("--limit", type=int, default=200, help="images to evaluate")
     args = parser.parse_args(argv)
 
@@ -109,12 +117,15 @@ def main(argv: list[str] | None = None) -> int:
     from recyclevision.detector import OpenVocabularyDetector
 
     vocabulary = Vocabulary.load(args.vocabulary)
-    detector = OpenVocabularyDetector(vocabulary)
+    detector = OpenVocabularyDetector(vocabulary, imgsz=args.imgsz)
     policy = RoutingPolicy.load(args.policy)
 
     print(f"vocabulary  {vocabulary.name} ({len(vocabulary.classes)} classes)")
     print(f"policy      {policy.name}")
-    print(f"evaluating  {len(images)} {args.split} image(s) at conf {args.confidence}\n")
+    print(
+        f"evaluating  {len(images)} {args.split} image(s) at conf {args.confidence}, "
+        f"imgsz {args.imgsz}\n"
+    )
 
     all_pairs: list[tuple[str, str]] = []
     false_positives: Counter[str] = Counter()

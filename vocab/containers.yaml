@@ -1,0 +1,49 @@
+# Container-line vocabulary — scoped deliberately narrow.
+#
+# WHY THIS EXISTS
+#
+# Evaluating waste_v2 against WaRP (200 images, 348 labelled objects) produced
+# 4.4% precision and 3.2% recall. The interesting part was not the score but
+# the shape of the failure:
+#
+#   every one of ~238 false positives came from a prompt for something the
+#   dataset cannot contain — plastic wrapper (119), food waste (50), bottle
+#   caps (46), sheet of paper (15).
+#
+# That is the same mechanism that made v1's "styrofoam" fire on a sheet of
+# paper, now visible at scale. An open-vocabulary detector does not answer
+# "is this present?" — it answers "which of these names fits best". Given a
+# name with no real referent in the scene, the best fit is background.
+#
+# The implication is a design rule, not a one-off fix:
+#
+#   ASK ONLY FOR WHAT THE STREAM CAN ACTUALLY CONTAIN.
+#
+# A prompt for something that never appears on a given line is not free. It is
+# a permanent source of false positives on that line.
+#
+# So vocabulary becomes facility-scoped configuration, exactly like a routing
+# policy: a container-sorting line gets this file, a household gets waste_v2,
+# and a mixed MRF gets its own.
+#
+# ⚠️ Scoping this to a dataset and then scoring on that dataset is partly
+# circular, and the improvement should be read as a test of the mechanism
+# rather than as an accuracy claim. What it genuinely predicts is that a
+# vocabulary carrying prompts for material a belt never carries will generate
+# false positives on that belt too.
+
+name: Container line
+description: >-
+  Bottles, cans, jars and cartons — a plastics/metal container sorting line.
+  No film, no organics, no loose paper, no caps: asking for absent classes
+  costs false positives.
+model: yoloe-11s-seg.pt
+
+classes:
+  - metal can
+  - plastic bottle
+  - plastic tub
+  - glass bottle
+  - glass jar
+  - cardboard box
+  - paper cup

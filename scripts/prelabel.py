@@ -58,6 +58,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--val-fraction", type=float, default=0.2)
     parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=None,
+        help="inference resolution; raise it for high-resolution frames",
+    )
+    parser.add_argument(
         "--boxes-only", action="store_true", help="write detection labels instead of segmentation"
     )
     args = parser.parse_args(argv)
@@ -74,7 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.weights:
         from recyclevision.detector import TrainedSegmentationDetector
 
-        detector = TrainedSegmentationDetector(args.weights)
+        detector = TrainedSegmentationDetector(
+            args.weights, **({"imgsz": args.imgsz} if args.imgsz else {})
+        )
         unknown = [n for n in detector.class_names if n not in class_index]
         if unknown:
             parser.error(
@@ -85,7 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from recyclevision.detector import OpenVocabularyDetector
 
-        detector = OpenVocabularyDetector(vocabulary)
+        detector = OpenVocabularyDetector(
+            vocabulary, **({"imgsz": args.imgsz} if args.imgsz else {})
+        )
         print(f"pre-labelling with the stock open vocabulary ({vocabulary.name})")
 
     prepare_tree(args.out)
