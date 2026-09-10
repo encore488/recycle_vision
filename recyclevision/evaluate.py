@@ -139,6 +139,45 @@ def match_detections(
     return result
 
 
+#: Buckets for the best-overlap histogram. The boundaries matter: a
+#: prediction landing at 0.0 was nowhere near an object, while one at 0.3 found
+#: the object and drew it loosely. Those need completely different fixes, and a
+#: single recall number cannot tell them apart.
+IOU_BUCKETS = [
+    (0.0, 0.01, "no overlap at all"),
+    (0.01, 0.10, "grazing"),
+    (0.10, 0.25, "found it, badly placed"),
+    (0.25, 0.45, "near miss"),
+    (0.45, 1.01, "matched"),
+]
+
+
+def best_overlaps(
+    predictions: list[tuple[str, BoundingBox, float]],
+    truth: list[tuple[str, BoundingBox]],
+) -> list[float]:
+    """For each prediction, its best overlap with any ground-truth box.
+
+    Unlike matching, nothing is claimed here -- this asks only "did the model
+    put a box anywhere near a real object", which is the question that
+    separates a detector that cannot see the objects from a harness that is
+    comparing the wrong coordinates.
+    """
+    if not truth:
+        return [0.0] * len(predictions)
+    return [max(iou(box, t_box) for _t_label, t_box in truth) for _label, box, _c in predictions]
+
+
+def overlap_histogram(overlaps: list[float]) -> list[tuple[str, int, float]]:
+    """Bucket best-overlap values into (label, count, share)."""
+    total = len(overlaps)
+    rows = []
+    for low, high, label in IOU_BUCKETS:
+        count = sum(1 for value in overlaps if low <= value < high)
+        rows.append((label, count, count / total if total else 0.0))
+    return rows
+
+
 def _bin_of(policy: RoutingPolicy, label: str) -> str | None:
     """The bin a class routes to, or None when the policy ignores it."""
     from .models import BoundingBox, Detection

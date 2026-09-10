@@ -161,6 +161,51 @@ false-positive source on that line. Vocabulary is therefore facility-scoped
 configuration, like a routing policy. `vocab/containers.yaml` is the first
 example.
 
+### Both hypotheses tested. One was wrong.
+
+| Run | Precision | Recall | Matched | False positives |
+| --- | --- | --- | --- | --- |
+| `waste_v2` @ 640 | 4.4% | 3.2% | 11 | ~239 |
+| `waste_v2` @ 1280 | 5.1% | 3.7% | 13 | ~242 |
+| `containers` @ 1280 | **50.0%** | **1.4%** | 5 | **5** |
+
+**Resolution was not the problem.** Doubling `imgsz` moved recall 3.2% → 3.7%.
+The bug was real — `predict()` genuinely ignored `imgsz`, and `train.py`
+genuinely contradicted it — but fixing it changed almost nothing here. A real
+bug is not automatically the cause of the symptom you noticed it while chasing.
+
+**Scoping the vocabulary was decisive, for precision.** False positives fell
+from ~242 to 5, precision 5.1% → 50%. The phantom-prompt mechanism is
+confirmed: prompts for absent material attach themselves to background.
+
+**But scoping also cost recall**, 3.7% → 1.4%. Some of those phantom prompts
+had been landing on real bottles with the wrong label — `plastic wrapper`
+predicted for `plastic bottle`, and so on. Removing the prompt removed the
+detection rather than correcting it.
+
+### The finding underneath all three runs
+
+**Recall is catastrophic in every configuration.** ~230 of 235 plastic bottles
+missed, whatever the resolution and whatever the vocabulary. The diagnostic
+counts say the same thing more directly: 3 objects / 1 prediction, 11 objects /
+2 predictions. The detector is barely firing.
+
+Precision is a prompt problem and is now solved. **Recall is not a prompt
+problem, and no vocabulary edit will touch it.** That reorders everything
+below: prompt tuning was supposed to be the cheap first lever, and it turns out
+to be polishing the wrong surface.
+
+Two candidates remain, and `--sweep` separates them in a single inference pass:
+
+- **Detections exist but score below the cutoff** → recall climbs steeply as
+  the threshold drops.
+- **Detections do not exist** → recall stays flat at conf 0.01, and the
+  overlap histogram shows predictions landing on nothing.
+
+If it is the second, **fine-tuning is the answer and prompt engineering is a
+distraction** — which would be a genuinely useful thing to have learned for the
+price of three commands.
+
 ### Two causes, separable by one command each
 
 1. **Inference resolution.** `predict()` never passed `imgsz`, so ultralytics
