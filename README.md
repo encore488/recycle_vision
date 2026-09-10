@@ -272,7 +272,12 @@ Live at
 [recyclevision.streamlit.app](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/),
 deployed from `main` on Streamlit Community Cloud.
 
-`packages.txt` installs the system libraries `opencv-python` links against.
+`packages.txt` installs the system libraries `opencv-python` links against. It
+contains **bare package names only** — Streamlit Cloud passes every line
+straight to `apt-get install` and does not strip comments, so a `#` line is an
+argument, not a comment. (A comment containing `->` once failed a deploy with
+`E: Command line option '>' [from ->] is not understood`.) `tests/test_deployment.py`
+enforces this.
 **These are installed when the container is built, not on every redeploy** — so
 if the app was first created before `packages.txt` existed, a plain redeploy
 will keep failing with `libGL.so.1: cannot open shared object file`. Use
