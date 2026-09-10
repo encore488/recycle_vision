@@ -1,0 +1,66 @@
+# Mass and carbon factors for impact estimates.
+#
+# ⚠️ THE NUMBERS IN THIS FILE ARE UNVERIFIED PLACEHOLDERS.
+#
+# `verified: false` below makes the app label every figure it derives from
+# them as an estimate. Do not remove that flag until each value has been
+# replaced with a cited one, or the app will start presenting guesses as
+# measurements.
+#
+# Where to get real numbers:
+#
+#   Carbon  US EPA WARM (Waste Reduction Model), "Recycling vs. Landfilling"
+#           emission factors, expressed in MTCO2E per short ton of material.
+#           Convert: 1 MTCO2E/short ton = 1.102 kg CO2e per kg.
+#   Mass    Weigh a representative sample of your own stream. Container masses
+#           vary enormously by brand and region, and lightweighting has moved
+#           them a lot over the last two decades.
+#
+# Values below are deliberately rounded to one or two significant figures.
+# False precision would imply a confidence that does not exist.
+
+name: Placeholder impact factors
+description: >-
+  Order-of-magnitude estimates so the impact mechanism can be exercised and
+  reviewed. Not suitable for reporting.
+verified: false
+
+# Avoided emissions from recycling a material instead of landfilling it,
+# in kg CO2e per kg of material. Aluminium dominates by an order of magnitude,
+# which is the one qualitative fact these numbers get reliably right.
+materials:
+  metal:        {co2e_kg_per_kg: 5.0,  basis: estimate}
+  aluminium:    {co2e_kg_per_kg: 9.0,  basis: estimate}
+  steel:        {co2e_kg_per_kg: 1.8,  basis: estimate}
+  plastic:      {co2e_kg_per_kg: 1.0,  basis: estimate}
+  film plastic: {co2e_kg_per_kg: 0.0,  basis: not-recycled-kerbside}
+  glass:        {co2e_kg_per_kg: 0.3,  basis: estimate}
+  paper:        {co2e_kg_per_kg: 3.0,  basis: estimate}
+  lined paper:  {co2e_kg_per_kg: 0.0,  basis: not-recycled-kerbside}
+  organic:      {co2e_kg_per_kg: 0.2,  basis: estimate}
+
+# Typical mass of one item, in grams, keyed by detector class name.
+items:
+  metal can:            {mass_g: 40,  material: metal}
+  metal bottle cap:     {mass_g: 2,   material: metal}
+  aluminum drink can:   {mass_g: 15,  material: aluminium}
+  steel food can:       {mass_g: 60,  material: steel}
+  metal can lid:        {mass_g: 5,   material: steel}
+  plastic bottle:       {mass_g: 12,  material: plastic}
+  plastic bottle cap:   {mass_g: 2,   material: plastic}
+  plastic tub:          {mass_g: 30,  material: plastic}
+  plastic cup:          {mass_g: 10,  material: plastic}
+  plastic bag:          {mass_g: 6,   material: film plastic}
+  plastic wrapper:      {mass_g: 3,   material: film plastic}
+  plastic film wrapper: {mass_g: 3,   material: film plastic}
+  styrofoam:            {mass_g: 5,   material: plastic}
+  glass bottle:         {mass_g: 200, material: glass}
+  glass jar:            {mass_g: 200, material: glass}
+  drinking glass:       {mass_g: 300, material: glass}
+  empty drinking glass: {mass_g: 300, material: glass}
+  cardboard box:        {mass_g: 100, material: paper}
+  sheet of paper:       {mass_g: 5,   material: paper}
+  paper:                {mass_g: 5,   material: paper}
+  newspaper:            {mass_g: 200, material: paper}
+  paper cup:            {mass_g: 12,  material: lined paper}
+  food waste:           {mass_g: 100, material: organic}

@@ -8,7 +8,6 @@ does not involve a browser.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -17,39 +16,9 @@ from PIL import Image
 from .models import SortResult
 from .pipeline import DEFAULT_POLICY, SortingPipeline
 from .render import annotate
+from .report import detection_rows, result_payload, to_csv, to_json
+from .session import Session
 from .vocabulary import DEFAULT_VOCAB
-
-
-def _as_dict(result: SortResult, source: str) -> dict:
-    return {
-        "source": source,
-        "model": result.model_name,
-        "policy": result.policy_name,
-        "total_items": result.total_items,
-        "diversion_rate": round(result.diversion_rate, 4),
-        "contamination_rate": round(result.contamination_rate, 4),
-        "counts_by_bin": dict(result.counts_by_bin),
-        "ignored_classes": sorted({d.label for d in result.ignored}),
-        "items": [
-            {
-                "item": item.label,
-                "bin": item.bin.key,
-                "bin_name": item.bin.name,
-                "material": item.material,
-                "confidence": round(item.confidence, 4),
-                "certainty": item.certainty.value,
-                "handling": item.handling,
-                "rationale": item.rationale,
-                "box": [
-                    item.detection.box.x1,
-                    item.detection.box.y1,
-                    item.detection.box.x2,
-                    item.detection.box.y2,
-                ],
-            }
-            for item in result.items
-        ],
-    }
 
 
 def _print_human(result: SortResult, source: str) -> None:
@@ -75,6 +44,42 @@ def _print_human(result: SortResult, source: str) -> None:
         print(f"\n  ignored (not waste): {', '.join(seen)}")
 
 
+def _print_impact(session: Session, indent: str = "  ") -> None:
+    from .impact import ImpactModel
+
+    estimate = ImpactModel.load().estimate(session.as_result())
+    print(f"\n{indent}mass          {estimate.total_mass_kg:.2f} kg")
+    print(f"{indent}diverted      {estimate.diverted_mass_kg:.2f} kg")
+    print(f"{indent}CO2e avoided  {estimate.co2e_avoided_kg:.2f} kg")
+    if estimate.coverage_note:
+        print(f"{indent}{estimate.coverage_note}")
+    if estimate.caveat:
+        print(f"{indent}! {estimate.caveat}")
+
+
+def _print_totals(session: Session, impact: bool) -> None:
+    print(f"\n{'=' * 60}")
+    print(
+        f"{session.image_count} image(s), {session.total_items} item(s), "
+        f"{session.diversion_rate:.0%} diverted from landfill"
+    )
+
+    for bin_ in session.bins_used:
+        print(f"\n  {bin_.name} ({len(session.items_in(bin_.key))})")
+
+    composition = session.counts_by_item.most_common()
+    if composition:
+        print("\n  stream composition:")
+        for name, count in composition:
+            print(f"    {count:4}  {name}")
+
+    if session.items_for_review:
+        print(f"\n  {len(session.items_for_review)} item(s) need review")
+
+    if impact:
+        _print_impact(session)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m recyclevision",
@@ -95,8 +100,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--confidence", type=float, default=0.15, help="detection threshold")
     parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
+    parser.add_argument("--csv", action="store_true", help="emit CSV rows instead of text")
     parser.add_argument(
         "--save-annotated", type=Path, default=None, help="directory to write annotated images to"
+    )
+    parser.add_argument(
+        "--impact",
+        action="store_true",
+        help="estimate mass and avoided emissions (factors are placeholders)",
     )
     args = parser.parse_args(argv)
 
@@ -113,25 +124,37 @@ def main(argv: list[str] | None = None) -> int:
     if args.save_annotated:
         args.save_annotated.mkdir(parents=True, exist_ok=True)
 
+    quiet = args.json or args.csv
+    session = Session()
     payload = []
+    rows = []
+
     for path in args.images:
         image = Image.open(path).convert("RGB")
         result = pipeline.sort(image, confidence=args.confidence)
+        session.add(str(path), result)
 
         if args.json:
-            payload.append(_as_dict(result, str(path)))
+            payload.append(result_payload(result, str(path)))
+        elif args.csv:
+            rows.extend(detection_rows(result, str(path)))
         else:
             _print_human(result, str(path))
 
         if args.save_annotated:
             out = args.save_annotated / f"{path.stem}_sorted.png"
             annotate(image, result).save(out)
-            if not args.json:
+            if not quiet:
                 print(f"\n  annotated -> {out}")
 
     if args.json:
-        json.dump(payload, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        sys.stdout.write(to_json(payload))
+    elif args.csv:
+        sys.stdout.write(to_csv(rows))
+    elif len(args.images) > 1:
+        _print_totals(session, args.impact)
+    elif args.impact:
+        _print_impact(session, indent="  ")
 
     return 0
 
