@@ -13,7 +13,10 @@ import streamlit as st
 from PIL import Image
 
 from recyclevision import RoutingPolicy, SortingPipeline, annotate, vocabulary
+from recyclevision.impact import ImpactModel
 from recyclevision.policy import PolicyError
+from recyclevision.report import detection_rows, result_payload, to_csv, to_json
+from recyclevision.session import Session
 from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -45,6 +48,11 @@ def load_detector(kind: str):
 @st.cache_resource(show_spinner=False)
 def load_policy(path: str) -> RoutingPolicy:
     return RoutingPolicy.load(path)
+
+
+@st.cache_resource(show_spinner=False)
+def load_impact() -> ImpactModel:
+    return ImpactModel.load()
 
 
 @st.cache_resource(show_spinner=False)
@@ -192,8 +200,10 @@ if not weights.is_custom:
 samples = sorted(p for p in SAMPLE_DIR.glob("*") if p.suffix.lower() in {".jpg", ".jpeg", ".png"})
 
 uploaded = st.file_uploader(
-    "Upload a photo of waste or recycling",
+    "Upload photos of waste or recycling",
     type=["jpg", "jpeg", "png"],
+    accept_multiple_files=True,
+    help="Upload several at once to see totals across the whole stream.",
 )
 
 if samples:
@@ -203,18 +213,16 @@ if samples:
         if column.button(sample.stem, use_container_width=True):
             st.session_state["sample"] = str(sample)
 
-image_bytes: bytes | None = None
-source_name = ""
+#: (name, bytes) for every image to process this run.
+inputs: list[tuple[str, bytes]] = []
 
-if uploaded is not None:
-    image_bytes = uploaded.getvalue()
-    source_name = uploaded.name
+if uploaded:
+    inputs = [(f.name, f.getvalue()) for f in uploaded]
     st.session_state.pop("sample", None)
 elif "sample" in st.session_state:
     sample_path = Path(st.session_state["sample"])
     if sample_path.is_file():
-        image_bytes = sample_path.read_bytes()
-        source_name = sample_path.name
+        inputs = [(sample_path.name, sample_path.read_bytes())]
 
 
 # --------------------------------------------------------------------------
@@ -245,152 +253,225 @@ def render_bin_card(bin_, items) -> None:
 
 # --------------------------------------------------------------------------
 # Results
+#
+# Both branches below live in keyed containers. Streamlit reconciles elements
+# by position, so without distinct keys the results view and the empty state
+# -- which both open with a three-column row -- get matched to each other, and
+# stale children from whichever rendered first bleed through into the other.
+# That showed up as the "How it works" copy appearing underneath the impact
+# metrics.
 # --------------------------------------------------------------------------
 
-if image_bytes is not None:
-    with st.spinner("Analysing…"):
-        image, result = sort_image(pipeline, image_bytes, str(policy_path), confidence)
-        annotated = annotate(
-            image,
-            result,
-            show_boxes=show_boxes,
-            show_labels=show_labels,
-            show_confidence=show_confidence,
+if inputs:
+    with st.container(key="results"):
+        session = Session()
+        rendered: list[tuple[str, Image.Image, object]] = []
+
+        progress = st.progress(0.0, text="Analysing…") if len(inputs) > 1 else None
+        for index, (name, data) in enumerate(inputs, 1):
+            with st.spinner("Analysing…"):
+                image, result = sort_image(pipeline, data, str(policy_path), confidence)
+            session.add(name, result)
+            rendered.append((name, image, result))
+            if progress:
+                progress.progress(index / len(inputs), text=f"Analysing… {index}/{len(inputs)}")
+        if progress:
+            progress.empty()
+
+        batch = len(inputs) > 1
+        combined = session.as_result()
+
+        if session.total_items == 0:
+            st.info(
+                "No waste items detected. Try lowering the confidence threshold in the "
+                "sidebar, or use a photo where the items are clearly separated."
+            )
+            if combined.ignored:
+                seen = sorted({d.label for d in combined.ignored})
+                st.caption(f"The model did see: {', '.join(seen)} — none of which are waste.")
+
+        # ---- headline metrics
+        if batch:
+            st.subheader(f"Totals across {session.image_count} images")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Items", session.total_items)
+        m2.metric(
+            "Diverted from landfill",
+            f"{session.diversion_rate:.0%}",
+            help="Share of items headed anywhere other than landfill.",
+        )
+        m3.metric(
+            "Contamination",
+            f"{session.contamination_rate:.0%}",
+            help="Share of the stream that is not recoverable — what facilities track.",
+        )
+        m4.metric(
+            "Needs review",
+            len(session.items_for_review),
+            help="Items where the policy cannot be sure of the destination.",
         )
 
-    if result.total_items == 0:
-        st.info(
-            "No waste items detected. Try lowering the confidence threshold in the "
-            "sidebar, or use a photo where the items are clearly separated."
-        )
-        if result.ignored:
-            seen = sorted({d.label for d in result.ignored})
-            st.caption(f"The model did see: {', '.join(seen)} — none of which are waste.")
+        # ---- impact
+        estimate = load_impact().estimate(combined)
+        if estimate.total_mass_kg > 0:
+            i1, i2, i3 = st.columns(3)
+            i1.metric("Estimated mass", f"{estimate.total_mass_kg:.2f} kg")
+            i2.metric("Diverted mass", f"{estimate.diverted_mass_kg:.2f} kg")
+            i3.metric(
+                "CO₂e avoided",
+                f"{estimate.co2e_avoided_kg:.2f} kg",
+                help="Emissions avoided by recycling these items instead of landfilling them.",
+            )
+            if estimate.caveat:
+                st.caption(f"⚠️ {estimate.caveat}")
+            if estimate.coverage_note:
+                st.caption(estimate.coverage_note)
 
-    # ---- headline metrics
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Items", result.total_items)
-    m2.metric(
-        "Diverted from landfill",
-        f"{result.diversion_rate:.0%}",
-        help="Share of items headed anywhere other than landfill.",
-    )
-    m3.metric(
-        "Contamination",
-        f"{result.contamination_rate:.0%}",
-        help="Share of the stream that is not recoverable. The metric sorting facilities track.",
-    )
-    m4.metric(
-        "Needs review",
-        len(result.items_for_review),
-        help="Items where the policy cannot be sure of the destination.",
-    )
-
-    st.divider()
-
-    # ---- images
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Original")
-        st.image(image, use_container_width=True)
-    with right:
-        st.subheader("Sorted")
-        st.image(annotated, use_container_width=True)
-        st.caption("Each box is coloured by destination bin, not by object class.")
-
-    # ---- bins
-    if result.items:
         st.divider()
-        st.subheader("Where it goes")
 
-        bins_used = result.bins_used
-        for row_start in range(0, len(bins_used), 3):
-            row = bins_used[row_start : row_start + 3]
-            columns = st.columns(3)
-            for column, bin_ in zip(columns, row, strict=False):
-                with column:
-                    render_bin_card(bin_, result.items_in(bin_.key))
+        # ---- images
+        for name, image, result in rendered:
+            annotated = annotate(
+                image,
+                result,
+                show_boxes=show_boxes,
+                show_labels=show_labels,
+                show_confidence=show_confidence,
+            )
+            if batch:
+                st.markdown(f"**{name}** — {result.total_items} item(s)")
+            left, right = st.columns(2)
+            with left:
+                if not batch:
+                    st.subheader("Original")
+                st.image(image, use_container_width=True)
+            with right:
+                if not batch:
+                    st.subheader("Sorted")
+                st.image(annotated, use_container_width=True)
+            if not batch:
+                st.caption("Each box is coloured by destination bin, not by object class.")
 
-    # ---- review queue
-    if result.items_for_review:
-        st.divider()
-        st.subheader("⚠️ Worth a second look")
-        st.caption(
-            "The model is confident about what it saw; the policy is not confident "
-            "about where it goes."
-        )
-        for item in result.items_for_review:
-            with st.container(border=True):
-                st.markdown(f"**{item.label}** → {item.bin.name}")
-                if item.rationale:
-                    st.write(item.rationale)
+        # ---- bins
+        if session.total_items:
+            st.divider()
+            st.subheader("Where it goes")
 
-    # ---- details
-    with st.expander("Detection details"):
-        st.caption(f"Model: {result.model_name} · Policy: {result.policy_name} · {source_name}")
+            bins_used = session.bins_used
+            for row_start in range(0, len(bins_used), 3):
+                row = bins_used[row_start : row_start + 3]
+                columns = st.columns(3)
+                for column, bin_ in zip(columns, row, strict=False):
+                    with column:
+                        render_bin_card(bin_, session.items_in(bin_.key))
 
-        if result.items:
+        # ---- composition
+        if batch and session.total_items:
+            st.divider()
+            st.subheader("Stream composition")
             st.dataframe(
                 [
-                    {
-                        "Item": item.label,
-                        "Detected as": item.detection.label,
-                        "Bin": item.bin.name,
-                        "Material": item.material,
-                        "Confidence": f"{item.confidence:.1%}",
-                        "Certainty": item.certainty.value,
-                    }
-                    for item in result.items
+                    {"Item": name, "Count": count, "Share": f"{count / session.total_items:.0%}"}
+                    for name, count in session.counts_by_item.most_common()
                 ],
                 use_container_width=True,
                 hide_index=True,
             )
 
-        if result.ignored:
-            seen = sorted({d.label for d in result.ignored})
+        # ---- review queue
+        if session.items_for_review:
+            st.divider()
+            st.subheader("⚠️ Worth a second look")
             st.caption(
-                f"Ignored as non-waste: {', '.join(seen)}. "
-                "These are excluded from every metric above."
+                "The model is confident about what it saw; the policy is not confident "
+                "about where it goes."
+            )
+            for item in session.items_for_review:
+                with st.container(border=True):
+                    st.markdown(f"**{item.label}** → {item.bin.name}")
+                    if item.rationale:
+                        st.write(item.rationale)
+
+        # ---- details and export
+        with st.expander("Detection details and export"):
+            st.caption(
+                f"Model: {combined.model_name} · Policy: {combined.policy_name} · "
+                f"{session.image_count} image(s)"
             )
 
+            rows = [
+                row
+                for entry in session.entries
+                for row in detection_rows(entry.result, entry.source)
+            ]
+            if rows:
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+
+                stem = Path(inputs[0][0]).stem if len(inputs) == 1 else "recyclevision_batch"
+                download_csv, download_json = st.columns(2)
+                download_csv.download_button(
+                    "Download CSV",
+                    data=to_csv(rows),
+                    file_name=f"{stem}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+                download_json.download_button(
+                    "Download JSON",
+                    data=to_json(
+                        [result_payload(entry.result, entry.source) for entry in session.entries]
+                    ),
+                    file_name=f"{stem}.json",
+                    mime="application/json",
+                    use_container_width=True,
+                )
+
+            if combined.ignored:
+                seen = sorted({d.label for d in combined.ignored})
+                st.caption(
+                    f"Ignored as non-waste: {', '.join(seen)}. "
+                    "These are excluded from every metric above."
+                )
+
 else:
-    # ---------------------------------------------------------------- empty
-    st.info("Upload an image or pick a sample to begin.")
-    st.divider()
+    with st.container(key="empty_state"):
+        # ---------------------------------------------------------------- empty
+        st.info("Upload one or more images, or pick a sample, to begin.")
+        st.divider()
 
-    st.subheader("How it works")
-    step1, step2, step3 = st.columns(3)
-    with step1:
-        st.markdown("### 1️⃣ Detect")
-        st.write("A vision model locates every object in the image.")
-    with step2:
-        st.markdown("### 2️⃣ Route")
-        st.write(
-            "A routing policy decides which bin each item belongs in — "
-            "based on local rules, not just what it is made of."
+        st.subheader("How it works")
+        step1, step2, step3 = st.columns(3)
+        with step1:
+            st.markdown("### 1️⃣ Detect")
+            st.write("A vision model locates every object in the image.")
+        with step2:
+            st.markdown("### 2️⃣ Route")
+            st.write(
+                "A routing policy decides which bin each item belongs in — "
+                "based on local rules, not just what it is made of."
+            )
+        with step3:
+            st.markdown("### 3️⃣ Explain")
+            st.write(
+                "Every decision comes with handling instructions, and flags "
+                "the items a human should check."
+            )
+
+        st.divider()
+        st.subheader("Why bins, not materials")
+        st.markdown(
+            """
+  Material does not determine destination, which is why classifying waste by
+  material gets the hard cases wrong:
+
+  - A **wine glass** is glass, but belongs in **landfill** — drinking glass melts at a
+    different temperature and ruins a batch of recycled container glass.
+  - A **disposable coffee cup** is paper, but belongs in **landfill** — it is plastic-lined.
+  - A **pizza slice** is organic, and belongs in **compost**, not recycling.
+
+  RecycleVision routes to bins directly, and tells you why.
+          """
         )
-    with step3:
-        st.markdown("### 3️⃣ Explain")
-        st.write(
-            "Every decision comes with handling instructions, and flags "
-            "the items a human should check."
-        )
-
-    st.divider()
-    st.subheader("Why bins, not materials")
-    st.markdown(
-        """
-Material does not determine destination, which is why classifying waste by
-material gets the hard cases wrong:
-
-- A **wine glass** is glass, but belongs in **landfill** — drinking glass melts at a
-  different temperature and ruins a batch of recycled container glass.
-- A **disposable coffee cup** is paper, but belongs in **landfill** — it is plastic-lined.
-- A **pizza slice** is organic, and belongs in **compost**, not recycling.
-
-RecycleVision routes to bins directly, and tells you why.
-        """
-    )
 
 
 st.divider()

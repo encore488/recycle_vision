@@ -103,12 +103,42 @@ is fetched automatically on first run and the UI says clearly that it is running
 in demo mode. Sample images are included, so you can try it without a photo of
 your own.
 
+## Batch mode and export
+
+Upload several photos at once and the app reports totals across the whole
+stream — diversion rate, contamination, stream composition — rather than per
+image. Every run can be downloaded as CSV (one row per item, geometry
+included) or JSON.
+
+### Impact estimates
+
+Mass and avoided emissions are estimated from `impact/factors.yaml`.
+
+**That file ships with unverified placeholder numbers**, and carries
+`verified: false` to say so. The app propagates that flag to a visible warning
+on every figure it derives. The arithmetic is sound; the constants are
+order-of-magnitude guesses, deliberately rounded so they cannot be mistaken
+for measurements.
+
+To make them real, replace each value with a cited one and flip the flag:
+
+- **Carbon** — US EPA WARM, "Recycling vs. Landfilling" factors, in MTCO2E per
+  short ton. Convert: 1 MTCO2E/short ton = 1.102 kg CO2e per kg.
+- **Mass** — weigh a sample of your own stream. Container masses vary hugely by
+  brand and region.
+
+Only diverted items count toward avoided emissions: recycling something is what
+avoids the emission, so a fully contaminated stream correctly scores zero rather
+than scoring for the material it happens to contain.
+
 ## Command line
 
 For scripting, or just to check it works without a browser:
 
 ```bash
 python -m recyclevision images/recycl_test.jpg
+python -m recyclevision images/*.jpg --impact        # batch totals + estimates
+python -m recyclevision images/*.jpg --csv > out.csv
 python -m recyclevision images/*.jpg --json
 python -m recyclevision images/recycl_test.jpg --save-annotated out/
 ```

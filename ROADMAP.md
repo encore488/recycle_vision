@@ -3,7 +3,7 @@
 Working plan for taking RecycleVision from prototype to a demo-able, resume-ready,
 and eventually genuinely useful tool.
 
-**Status:** v0.5 — open-vocabulary detection, vocabulary v2. 100% detection precision,
+**Status:** v0.6 — batch mode, export and impact estimates. Open-vocabulary detection with vocabulary v2. 100% detection precision,
 85% class accuracy, 100% routing accuracy on the (small, fitted) sample set.
 [Live demo](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/).
 
@@ -161,15 +161,16 @@ is a small sample and the MRF policy was written after seeing these images, so 8
 ceiling, not an expectation. **Detection precision — 75% — is the number Milestone 4 has
 to beat, and no policy file can move it.**
 
-## Milestone 2 — "It's quantified"
+## Milestone 2 — "It's quantified"  ✅ complete
 
-Make the routing decisions measurable and exportable.
-
-- [ ] **Diversion and contamination rates** as headline metrics, tracked across a session.
-- [ ] **Impact accounting.** Estimated mass (average mass per item class) and CO₂e avoided
-      using published EPA WARM factors. Grounded in real, cited figures — never invented.
-- [ ] Per-detection table with bbox geometry; CSV/JSON export; batch mode over N images with
-      an aggregate report.
+- [x] **Diversion and contamination rates** as headline metrics, tracked across a session.
+- [x] **Impact accounting.** Mass and CO₂e avoided, from `impact/factors.yaml`.
+      The factors ship as **unverified placeholders** and the file's `verified: false`
+      flag propagates to a visible warning on every derived figure. The mechanism is
+      real; the constants are explicitly not. Replacing them with cited EPA WARM values
+      is a data change, not a code change.
+- [x] Per-detection table with bbox geometry; CSV and JSON export; batch mode over N
+      images with aggregate totals and stream composition.
 - [x] A second policy file (`mrf_conveyor.yaml`) to prove the abstraction holds, plus a
       policy picker in the UI. Done early: QA showed context, not code, was the biggest
       available accuracy win.
