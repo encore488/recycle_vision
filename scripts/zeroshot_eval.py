@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image  # noqa: E402
 
-from recyclevision.detector import DEFAULT_IMGSZ  # noqa: E402
+from recyclevision.detector import DEFAULT_IMGSZ, DEFAULT_MAX_AREA_FRACTION  # noqa: E402
 from recyclevision.evaluate import (  # noqa: E402
     DEFAULT_IOU,
     best_overlaps,
@@ -108,6 +108,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--limit", type=int, default=200, help="images to evaluate")
     parser.add_argument(
+        "--max-area",
+        type=float,
+        default=DEFAULT_MAX_AREA_FRACTION,
+        help="drop predictions covering more than this share of the frame",
+    )
+    parser.add_argument(
         "--sweep",
         action="store_true",
         help="detect once at a very low threshold and report metrics at several "
@@ -134,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     from recyclevision.detector import OpenVocabularyDetector
 
     vocabulary = Vocabulary.load(args.vocabulary)
-    detector = OpenVocabularyDetector(vocabulary, imgsz=args.imgsz)
+    detector = OpenVocabularyDetector(vocabulary, imgsz=args.imgsz, max_area_fraction=args.max_area)
     policy = RoutingPolicy.load(args.policy)
 
     print(f"vocabulary  {vocabulary.name} ({len(vocabulary.classes)} classes)")
@@ -151,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     # filter over the same predictions. Re-running detection per threshold
     # would cost six passes to learn the same thing.
     per_image: list[tuple[list, list]] = []
+    area_fractions: list[float] = []
     for index, image_path in enumerate(images, 1):
         image = Image.open(image_path).convert("RGB")
         truth = read_truth(labels_root / f"{image_path.stem}.txt", names, image.width, image.height)
@@ -158,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
             (d.label, d.box, d.confidence) for d in detector.detect(image, confidence=floor)
         ]
         per_image.append((predictions, truth))
+        frame_area = float(image.width * image.height)
+        if frame_area:
+            area_fractions.extend(box.area / frame_area for _label, box, _c in predictions)
 
         if index % 25 == 0 or index == len(images):
             print(f"  {index}/{len(images)}")
@@ -169,24 +179,26 @@ def main(argv: list[str] | None = None) -> int:
     for label, count, share in histogram:
         print(f"  {label:24} {count:6}  {share:5.1%}")
 
-    # Read the shape rather than asserting one: the whole point of this block
-    # is to distinguish causes, so it must not announce a conclusion the
-    # numbers do not support.
-    no_overlap = next(share for label, _c, share in histogram if label == "no overlap at all")
-    near = sum(share for label, _c, share in histogram if label in ("near miss", "matched"))
-    if no_overlap > 0.6:
-        print("  -> mostly landing on nothing: the model is not finding these objects.")
-        print("     Neither a threshold nor a prompt change fixes that; training does.")
-    elif near > 0.3:
-        print("  -> mostly landing on real objects: localisation works, so the loss")
-        print("     is in labelling or thresholds rather than in detection.")
-    else:
-        print("  -> boxes are near objects but loosely drawn; try a lower --iou")
-        print("     before concluding anything about the model.")
+    # How much of the frame each box covers. A prediction spanning most of the
+    # image is the model describing the scene rather than finding an object in
+    # it, which overlaps nothing and wrecks precision while adding no
+    # detections. Reported here because no other number reveals it.
+    if area_fractions:
+        scene_sized = sum(1 for v in area_fractions if v > 0.5)
+        large = sum(1 for v in area_fractions if v > 0.25)
+        print("\nbox sizes, as a share of the frame")
+        print(
+            f"  over 50% of the frame    {scene_sized:6}  {scene_sized / len(area_fractions):5.1%}"
+        )
+        print(f"  over 25% of the frame    {large:6}  {large / len(area_fractions):5.1%}")
+        if scene_sized:
+            print("  -> scene-sized boxes present. Lower --max-area to drop them;")
+            print("     they overlap nothing and cost precision for no recall.")
 
     if args.sweep:
         print("\nby confidence threshold")
         print(f"  {'conf':>6}{'preds':>8}{'matched':>9}{'precision':>11}{'recall':>9}")
+        recalls: list[float] = []
         for threshold in thresholds:
             kept = [
                 ([p for p in predictions if p[2] >= threshold], truth)
@@ -200,12 +212,29 @@ def main(argv: list[str] | None = None) -> int:
             findable = sum(len(truth) for _p, truth in kept)
             precision = total_matched / total_found if total_found else 0.0
             recall = total_matched / findable if findable else 0.0
+            recalls.append(recall)
             print(
                 f"  {threshold:>6.2f}{total_found:>8}{total_matched:>9}"
                 f"{precision:>10.1%}{recall:>9.1%}"
             )
-        print("\n  recall flat as the threshold drops -> the detections do not exist.")
-        print("  recall climbing steeply          -> they exist, scored too low.")
+        # Judge from the curve, not from a canned sentence. The histogram above
+        # can look damning while this table shows the detections plainly exist,
+        # and an earlier version of this script printed exactly that
+        # contradiction.
+        best = max(recalls) if recalls else 0.0
+        at_default = recalls[thresholds.index(0.15)] if 0.15 in thresholds else 0.0
+        print()
+        if best > 3 * max(at_default, 1e-9) and best > 0.2:
+            print(f"  recall rises from {at_default:.1%} to {best:.1%} as the threshold drops:")
+            print("  the detections EXIST and are scored too low. This is a calibration")
+            print("  problem, not blindness — thresholds and filtering will help, and")
+            print("  fine-tuning would mostly be fixing the scores rather than the eyes.")
+        elif best < 0.1:
+            print(f"  recall never exceeds {best:.1%} at any threshold: the detections do")
+            print("  not exist. No threshold or prompt change fixes that; training does.")
+        else:
+            print(f"  recall peaks at {best:.1%}. Partial detection — worth looking at the")
+            print("  diagnostic images before choosing between tuning and training.")
         return 0
 
     all_pairs: list[tuple[str, str]] = []
