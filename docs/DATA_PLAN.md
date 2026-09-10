@@ -206,6 +206,62 @@ If it is the second, **fine-tuning is the answer and prompt engineering is a
 distraction** — which would be a genuinely useful thing to have learned for the
 price of three commands.
 
+### What the sweep and the images actually showed
+
+The sweep settled it, and reversed the previous conclusion:
+
+```
+   conf   preds  matched  precision   recall
+   0.01    4920      183      3.7%    52.6%
+   0.15     321       12      3.7%     3.4%
+```
+
+**Recall goes from 3.4% to 52.6% as the threshold drops — fifteenfold.** The
+detections exist. They are scored far too low. This is a *calibration* problem,
+not blindness, and the previous entry in this file said the opposite.
+
+Worse, the script itself printed "the model is not finding these objects;
+training does" three lines above a table refuting it. The heuristic read only
+the overlap histogram and ignored the sweep. A diagnostic that contradicts its
+own evidence is worse than no diagnostic, and it now judges from the recall
+curve, which is the stronger signal.
+
+### The images showed what no metric could
+
+Three of the six diagnostic frames have a single red box **covering nearly the
+entire image**, labelled `food waste` at 15–35%.
+
+That is not a failed detection. It is the model answering the question it was
+actually asked: given "food waste" as a candidate name for a photograph of
+mixed refuse, the whole frame genuinely is the best match. It was describing
+the scene, not finding an object in it.
+
+Those boxes overlap nothing, so they cost precision while contributing no
+recall — which is exactly the 61.7% "no overlap at all" in the histogram.
+
+**`DEFAULT_MAX_AREA_FRACTION = 0.5`** drops them. Checked against this
+project's own sample images first: at 0.5 nothing changes (the largest genuine
+detection covers 26% of its frame), and at 0.25 a real large container is lost.
+Generous by default, tightened per deployment.
+
+The ground truth, meanwhile, is fine — green boxes sit on real bottles and
+cans. The harness is not the problem, which is the other thing only the images
+could establish.
+
+### Where this leaves the plan
+
+- Precision: **prompt scoping** (242 → 5 false positives) plus **area
+  filtering** (the scene boxes). Both are configuration.
+- Recall: the objects *are* being found at 0.01. The remaining work is score
+  calibration and thresholding, not necessarily training.
+- Fine-tuning is still worth doing, but it is no longer the only option, and
+  the argument for it changed: it would be correcting confidence scores rather
+  than teaching the model to see.
+
+The user's own read of the images — "it can identify some, but not all of the
+visible materials, and the clutter is relentless" — matches 52.6% recall
+exactly.
+
 ### Two causes, separable by one command each
 
 1. **Inference resolution.** `predict()` never passed `imgsz`, so ultralytics

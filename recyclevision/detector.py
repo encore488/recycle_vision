@@ -16,16 +16,26 @@ from .vocabulary import DEFAULT_VOCAB, Vocabulary
 from .weights import WeightsChoice, resolve_weights
 
 
-def _to_detections(result, names) -> list[Detection]:
-    """Convert an ultralytics result into the project's own vocabulary."""
+def _to_detections(result, names, max_area_fraction: float = 1.0) -> list[Detection]:
+    """Convert an ultralytics result into the project's own vocabulary.
+
+    Drops scene-sized boxes -- see `DEFAULT_MAX_AREA_FRACTION`.
+    """
+    height, width = result.orig_shape
+    frame_area = float(height * width)
+    limit = frame_area * max_area_fraction
+
     detections = []
     for box in result.boxes:
         x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
+        candidate = BoundingBox(x1, y1, x2, y2)
+        if frame_area > 0 and candidate.area > limit:
+            continue
         detections.append(
             Detection(
                 label=names[int(box.cls[0])],
                 confidence=float(box.conf[0]),
-                box=BoundingBox(x1, y1, x2, y2),
+                box=candidate,
             )
         )
     return detections
@@ -36,6 +46,20 @@ def _to_detections(result, names) -> list[Detection]:
 #: it. Waste on a belt is small in frame to begin with, so that default costs
 #: recall badly on exactly the imagery this project targets.
 DEFAULT_IMGSZ = 960
+
+#: Reject any detection covering more than this fraction of the frame.
+#:
+#: Asked to find "food waste" in a photograph of mixed refuse, an
+#: open-vocabulary detector will box the entire image, because that genuinely
+#: is the best match for the phrase -- it describes the scene rather than an
+#: object in it. On WaRP those whole-frame boxes were the single largest source
+#: of false positives, and they overlap nothing, so they destroy precision
+#: while contributing no detections.
+#:
+#: No item on a sorting belt fills half the frame. A photograph of a single
+#: item held up to a phone camera can, which is why this is generous by default
+#: and tightened per deployment rather than set to something clever.
+DEFAULT_MAX_AREA_FRACTION = 0.5
 
 
 @runtime_checkable
@@ -60,11 +84,17 @@ class YoloDetector:
     importable -- and testable -- in environments that have neither.
     """
 
-    def __init__(self, weights: WeightsChoice | None = None, imgsz: int = DEFAULT_IMGSZ) -> None:
+    def __init__(
+        self,
+        weights: WeightsChoice | None = None,
+        imgsz: int = DEFAULT_IMGSZ,
+        max_area_fraction: float = DEFAULT_MAX_AREA_FRACTION,
+    ) -> None:
         from ultralytics import YOLO  # deferred: heavy import
 
         self.weights = weights or resolve_weights()
         self.imgsz = imgsz
+        self.max_area_fraction = max_area_fraction
         self._model = YOLO(self.weights.path)
 
     @property
@@ -82,7 +112,7 @@ class YoloDetector:
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
         result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
-        return _to_detections(result, self._model.names)
+        return _to_detections(result, self._model.names, self.max_area_fraction)
 
 
 class OpenVocabularyDetector:
@@ -99,11 +129,17 @@ class OpenVocabularyDetector:
     request time would make the app undeployable on a small host.
     """
 
-    def __init__(self, vocabulary: Vocabulary | None = None, imgsz: int = DEFAULT_IMGSZ) -> None:
+    def __init__(
+        self,
+        vocabulary: Vocabulary | None = None,
+        imgsz: int = DEFAULT_IMGSZ,
+        max_area_fraction: float = DEFAULT_MAX_AREA_FRACTION,
+    ) -> None:
         from ultralytics import YOLOE  # deferred: heavy import
 
         self.vocabulary = vocabulary or Vocabulary.load(DEFAULT_VOCAB)
         self.imgsz = imgsz
+        self.max_area_fraction = max_area_fraction
         embeddings = self.vocabulary.load_embeddings()
 
         self._model = YOLOE(self.vocabulary.model)
@@ -133,7 +169,7 @@ class OpenVocabularyDetector:
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
         result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
-        return _to_detections(result, self._model.names)
+        return _to_detections(result, self._model.names, self.max_area_fraction)
 
     def detect_with_masks(
         self, image, confidence: float = 0.25
@@ -146,7 +182,7 @@ class OpenVocabularyDetector:
         annotation and this model produces it for nothing.
         """
         result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
-        detections = _to_detections(result, self._model.names)
+        detections = _to_detections(result, self._model.names, self.max_area_fraction)
 
         if result.masks is None:
             return [(d, None) for d in detections]
@@ -170,10 +206,16 @@ class TrainedSegmentationDetector:
     reason to label in batches rather than all at once.
     """
 
-    def __init__(self, weights: str | Path, imgsz: int = DEFAULT_IMGSZ) -> None:
+    def __init__(
+        self,
+        weights: str | Path,
+        imgsz: int = DEFAULT_IMGSZ,
+        max_area_fraction: float = DEFAULT_MAX_AREA_FRACTION,
+    ) -> None:
         from ultralytics import YOLO  # deferred: heavy import
 
         self.imgsz = imgsz
+        self.max_area_fraction = max_area_fraction
         self.weights_path = Path(weights)
         if not self.weights_path.is_file():
             raise FileNotFoundError(f"no weights at {self.weights_path}")
@@ -193,13 +235,13 @@ class TrainedSegmentationDetector:
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
         result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
-        return _to_detections(result, self._model.names)
+        return _to_detections(result, self._model.names, self.max_area_fraction)
 
     def detect_with_masks(
         self, image, confidence: float = 0.25
     ) -> list[tuple[Detection, list[tuple[float, float]] | None]]:
         result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]
-        detections = _to_detections(result, self._model.names)
+        detections = _to_detections(result, self._model.names, self.max_area_fraction)
         if result.masks is None:
             return [(d, None) for d in detections]
         outlines = [[(float(x), float(y)) for x, y in polygon] for polygon in result.masks.xy]
