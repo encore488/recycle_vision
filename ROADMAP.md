@@ -90,7 +90,7 @@ The v0.2 code was a Streamlit UI calling a YOLO wrapper, with material logic har
 
 ---
 
-## Milestone 1 — "It runs, and it routes"  ← all but deployment done
+## Milestone 1 — "It runs, and it routes"  ✅ complete
 
 A stranger can clone it, run it, and get an explained bin decision.
 
@@ -113,7 +113,8 @@ A stranger can clone it, run it, and get an explained bin decision.
       split out; `packages.txt` for the Streamlit Cloud system libraries.
 - [x] `README.txt` → `README.md`, with a screenshot.
 - [x] GitHub Actions: ruff check, ruff format, pytest.
-- [ ] **Deploy to Streamlit Community Cloud or Hugging Face Spaces.** ← needs your account
+- [x] **Deployed to Streamlit Community Cloud**, from `main`:
+      https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/
 
 > A live URL in the README is worth more than any single feature on this list.
 

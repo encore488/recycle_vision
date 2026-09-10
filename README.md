@@ -2,6 +2,8 @@
 
 **Point it at waste. It tells you which bin each item goes in — and why.**
 
+**[▶ Try the live demo](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/)**
+
 RecycleVision is a computer vision system for waste sorting. The long-term goal is
 real-time perception for recycling conveyor belts, and eventually for automated
 robotic sorting.
@@ -213,7 +215,9 @@ the dashboard.
 
 ## Deploying
 
-The app is deployable to Streamlit Community Cloud or Hugging Face Spaces as-is.
+Live at
+[recyclevision.streamlit.app](https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/),
+deployed from `main` on Streamlit Community Cloud.
 `packages.txt` installs the system libraries `opencv-python` links against —
 without them the app dies at import with `libGL.so.1: cannot open shared object
 file`, which is invisible locally and immediate in deployment.
