@@ -1,0 +1,161 @@
+# Materials recovery facility (MRF) sorting-line policy
+#
+# The same detector, a different context, and therefore different rules.
+#
+# A household policy reasonably assumes a detected "cup" is a cup. On a
+# recycling sorting line that assumption is wrong: QA on real conveyor
+# imagery found that every "cup" and "bowl" the model reported was in fact a
+# container -- a steel can, an aluminium can, a can lid, a yogurt tub. There
+# is no tableware on a MRF line. This policy encodes that context.
+#
+# It also mirrors how a MRF actually sorts. The first pass separates the
+# stream into containers, fibre and residue; the metal/plastic/glass split
+# happens downstream by magnet, eddy current and optical sorter -- machinery
+# that does not need the camera's help. So "Mixed Containers" is the honest
+# destination, not a guess between aluminium and PP that the detector cannot
+# support.
+#
+# Fitted against a small sample. Re-measure with `recyclevision.qa` before
+# trusting it on a new line.
+
+name: MRF Sorting Line
+description: >-
+  First-pass separation for a materials recovery facility: containers, fibre,
+  organics and residue. Assumes an industrial waste stream, not a kitchen.
+version: 1
+
+default: ignore
+
+bins:
+  - key: containers
+    name: Mixed Containers
+    color: "#1E6FD9"
+    description: >-
+      Cans, tubs, bottles and jars. Split downstream by magnet, eddy current
+      and optical sorter.
+    diverted: true
+
+  - key: fibre
+    name: Paper & Cardboard
+    color: "#B4802A"
+    description: Old corrugated cardboard and mixed paper.
+    diverted: true
+
+  - key: organics
+    name: Organics
+    color: "#2E9E5B"
+    description: >-
+      Food and plant matter. Divertible, but on a recycling line it is
+      contamination -- it wets and spoils the fibre stream.
+    diverted: true
+
+  - key: residue
+    name: Residue
+    color: "#9CA3AF"
+    description: Not recoverable on this line. Goes to disposal.
+    diverted: false
+
+rules:
+
+  # ------------------------------------------------------------- containers
+  #
+  # COCO's container vocabulary is tableware, so its labels arrive systematically
+  # wrong here. The mapping below is by *shape*, which is what the model can
+  # actually see, rather than by the label's dictionary meaning.
+
+  cup: &container
+    bin: containers
+    item: Container
+    material: metal, plastic or glass
+    handling: Empty. Downstream separation handles the material split.
+    certainty: high
+    rationale: >-
+      On a sorting line a "cup"-shaped detection is a can or a tub, not
+      tableware. Measured: every "cup" in the sample was a steel can, an
+      aluminium can, or a drinking glass -- and the first two dominate.
+
+  bowl: *container
+  bottle: *container
+  wine glass: *container
+  vase: *container
+
+  # --------------------------------------------------------------- fibre
+
+  book: &fibre
+    bin: fibre
+    item: Paper
+    material: paper
+    handling: Keep dry. Wet fibre is downgraded or rejected.
+    certainty: high
+
+  # ------------------------------------------------------------- organics
+
+  banana: &food
+    bin: organics
+    item: Food waste
+    material: organic
+    handling: Remove from the line -- it contaminates the fibre stream.
+    certainty: high
+    rationale: Divertible in principle, but pure contamination in a recycling stream.
+
+  apple: *food
+  orange: *food
+  broccoli: *food
+  carrot: *food
+  sandwich: *food
+  hot dog: *food
+  pizza: *food
+  donut: *food
+  cake: *food
+  potted plant: *food
+
+  # -------------------------------------------------------------- residue
+
+  fork: &residue
+    bin: residue
+    item: Small metal or plastic item
+    material: mixed
+    handling: Too small to sort; falls through the screens.
+    certainty: low
+    rationale: >-
+      Below the size threshold the sorting machinery can catch. Recoverable in
+      principle, unrecoverable on this line.
+
+  knife: *residue
+  spoon: *residue
+  scissors: *residue
+  toothbrush: *residue
+
+  backpack: &tangler
+    bin: residue
+    item: Textile
+    material: textile
+    handling: Pull off the line by hand -- textiles wrap the screen shafts.
+    certainty: high
+    rationale: A "tangler". Textiles and film jam the disc screens and force a shutdown.
+
+  handbag: *tangler
+  suitcase: *tangler
+  tie: *tangler
+  umbrella: *tangler
+  teddy bear: *tangler
+
+  cell phone: &ewaste
+    bin: residue
+    item: Electronics
+    material: mixed electronic
+    handling: Pull off the line. Lithium batteries ignite when compacted.
+    certainty: high
+    rationale: A fire risk on the line, not a recoverable material in this stream.
+
+  laptop: *ewaste
+  keyboard: *ewaste
+  mouse: *ewaste
+  remote: *ewaste
+  tv: *ewaste
+  microwave: *ewaste
+  toaster: *ewaste
+  hair drier: *ewaste
+  oven: *ewaste
+  refrigerator: *ewaste
+  clock: *ewaste

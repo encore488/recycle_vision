@@ -1,0 +1,228 @@
+# Household single-stream routing policy
+#
+# Maps detector class names onto bins. This file is the *only* place that
+# knows local recycling rules -- swapping facilities or municipalities means
+# swapping this file, not touching code.
+#
+# Written against stock YOLOv8 COCO class names. When a conveyor-trained
+# model replaces it, this file is replaced alongside it and nothing else
+# changes.
+#
+# Rule fields (only `bin` is required):
+#   bin        which bin key the item routes to
+#   item       plain-language name shown to the user
+#   material   what it is made of -- an attribute, never the destination
+#   handling   what to do before binning it
+#   certainty  high | low   (low = surface for human review)
+#   rationale  why this bin, when the answer is surprising
+
+name: Household Single-Stream
+description: >-
+  Generic US household kerbside rules: mixed recycling, organics, landfill,
+  e-waste drop-off, and reuse. Conservative where local programs differ.
+version: 1
+
+# Detector classes with no rule are ignored rather than binned. COCO sees
+# people, cars, dogs and sofas; none of those are waste, and counting them
+# would poison every metric on the dashboard.
+default: ignore
+
+bins:
+  - key: recycling
+    name: Mixed Recycling
+    color: "#1E6FD9"
+    description: Kerbside recycling. Empty, clean and dry only.
+    diverted: true
+
+  - key: compost
+    name: Organics
+    color: "#2E9E5B"
+    description: Food scraps and plant matter for composting.
+    diverted: true
+
+  - key: reuse
+    name: Reuse / Donate
+    color: "#7B4FD9"
+    description: Still serviceable. Donation beats recycling on every axis.
+    diverted: true
+
+  - key: special
+    name: Special Handling
+    color: "#E08A1E"
+    description: >-
+      Electronics, batteries and hazardous items. Never kerbside -- these
+      start fires in collection trucks and at sorting facilities.
+    diverted: true
+
+  - key: landfill
+    name: Landfill
+    color: "#9CA3AF"
+    description: Not recoverable through any available stream.
+    diverted: false
+
+rules:
+
+  # ---------------------------------------------------------------- containers
+
+  bottle:
+    bin: recycling
+    item: Beverage bottle
+    material: plastic or glass
+    handling: Empty and rinse. Leave the cap screwed on.
+    certainty: high
+    rationale: >-
+      Glass and plastic bottles are both accepted in single-stream, so the
+      material ambiguity does not change the destination. Loose caps are too
+      small to sort and fall through the screens -- keep them on the bottle.
+
+  wine glass:
+    bin: landfill
+    item: Drinking glass
+    material: glass
+    handling: Wrap before binning if broken.
+    certainty: high
+    rationale: >-
+      Not a container glass. Drinking and tempered glass melt at a different
+      temperature and will ruin a batch of recycled container glass. Counter-
+      intuitive, but glassware genuinely does not belong in the glass stream.
+
+  vase:
+    bin: landfill
+    item: Vase or ceramic
+    material: ceramic or glass
+    handling: Consider donating if intact.
+    certainty: high
+    rationale: Same as glassware -- ceramics and decorative glass contaminate container glass.
+
+  cup:
+    bin: landfill
+    item: Cup
+    material: mixed
+    handling: If it is a ceramic mug, keep or donate it instead.
+    certainty: low
+    rationale: >-
+      A disposable hot cup is plastic-lined paper and is rejected by most
+      programs; a ceramic mug is reusable. Different destinations, and the
+      detector cannot tell them apart.
+
+  bowl:
+    bin: landfill
+    item: Bowl
+    material: mixed
+    handling: Scrape food residue into the organics bin first.
+    certainty: low
+    rationale: >-
+      Ceramic goes to landfill, rigid plastic to recycling, moulded fibre to
+      compost. Three different bins behind one detector class.
+
+  # ------------------------------------------------------------------- cutlery
+
+  fork: &cutlery
+    bin: landfill
+    item: Cutlery
+    material: metal or plastic
+    handling: Metal cutlery should be kept, donated, or taken to scrap.
+    certainty: low
+    rationale: >-
+      Plastic cutlery is below the size threshold sorting machinery can
+      catch and falls through the screens; metal cutlery is valuable but is
+      not a kerbside item. Neither belongs in the blue bin.
+
+  knife: *cutlery
+  spoon: *cutlery
+
+  scissors:
+    bin: special
+    item: Scissors
+    material: metal
+    handling: Sheathe or wrap the blades. Take to scrap metal collection.
+    certainty: high
+    rationale: Sharps injure sorting-line workers. Never place loose in any kerbside bin.
+
+  # -------------------------------------------------------------------- paper
+
+  book:
+    bin: recycling
+    item: Book
+    material: paper
+    handling: >-
+      Tear the cover off a hardback first -- the boards and glue are not
+      paper. Better still, donate a readable book.
+    certainty: high
+
+  # ------------------------------------------------------------------ organics
+
+  banana: &food
+    bin: compost
+    item: Food waste
+    material: organic
+    handling: Compost, or use a kerbside organics collection where offered.
+    certainty: high
+
+  apple: *food
+  orange: *food
+  broccoli: *food
+  carrot: *food
+  sandwich: *food
+  hot dog: *food
+  pizza: *food
+  donut: *food
+  cake: *food
+
+  potted plant:
+    bin: compost
+    item: Plant
+    material: organic
+    handling: Compost the plant and soil; the pot is a separate item.
+    certainty: low
+    rationale: The plant composts but the pot does not. One detection, two destinations.
+
+  # ---------------------------------------------------------------- electronics
+
+  cell phone: &ewaste
+    bin: special
+    item: Electronics
+    material: mixed electronic
+    handling: >-
+      Take to an e-waste drop-off. Never kerbside and never in landfill --
+      lithium batteries ignite when crushed in a collection truck.
+    certainty: high
+    rationale: Recoverable metals plus a fire risk. Both reasons point away from the kerb.
+
+  laptop: *ewaste
+  keyboard: *ewaste
+  mouse: *ewaste
+  remote: *ewaste
+  tv: *ewaste
+  microwave: *ewaste
+  toaster: *ewaste
+  hair drier: *ewaste
+  oven: *ewaste
+  refrigerator: *ewaste
+  clock: *ewaste
+
+  # -------------------------------------------------------------------- textiles
+
+  backpack: &textile
+    bin: reuse
+    item: Textile goods
+    material: textile
+    handling: >-
+      Donate if serviceable; otherwise most areas run a textile recycling
+      bank. Textiles in the blue bin tangle the sorting machinery.
+    certainty: high
+
+  handbag: *textile
+  suitcase: *textile
+  tie: *textile
+  umbrella: *textile
+  teddy bear: *textile
+
+  # ------------------------------------------------------------------- residual
+
+  toothbrush:
+    bin: landfill
+    item: Toothbrush
+    material: mixed plastic
+    handling: Bonded nylon and plastic cannot be separated.
+    certainty: high
