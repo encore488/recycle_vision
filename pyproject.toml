@@ -2,7 +2,10 @@
 name = "recyclevision"
 version = "0.3.0"
 description = "Tells you which bin each item belongs in, and why."
-requires-python = ">=3.10"
+# 3.9 is supported deliberately: it is what the maintainer's working
+# environment runs, and the 3.10-only conveniences this codebase reached for
+# (`zip(strict=)`) were doing nothing the surrounding code did not already do.
+requires-python = ">=3.9"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -11,7 +14,7 @@ addopts = "-q --strict-markers"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
