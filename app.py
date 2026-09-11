@@ -136,11 +136,18 @@ with st.sidebar:
 
     confidence = st.slider(
         "Confidence threshold",
-        min_value=0.10,
+        min_value=0.01,
         max_value=0.95,
         value=0.15,
-        step=0.05,
-        help="Lower catches more objects but with more false positives.",
+        step=0.01,
+        help=(
+            "Lower catches more objects and more false positives. The useful "
+            "range is domain-dependent: clean photos work around 0.15, while "
+            "a cluttered conveyor belt needs 0.01–0.05 — measured on WaRP, "
+            "where raising the threshold from 0.01 to 0.15 threw away 15x the "
+            "recall. The slider used to stop at 0.10, which could not reach "
+            "the range the target domain actually needs."
+        ),
     )
 
     st.subheader("Display")
@@ -209,8 +216,10 @@ uploaded = st.file_uploader(
 if samples:
     st.caption("…or try one of the samples:")
     sample_cols = st.columns(min(len(samples), 4))
-    for column, sample in zip(sample_cols, samples, strict=False):
-        if column.button(sample.stem, use_container_width=True):
+    # Indexed rather than zipped: `zip(strict=)` is Python 3.10+, and this has
+    # to run on 3.9 as well as on the deployment host.
+    for index, sample in enumerate(samples[: len(sample_cols)]):
+        if sample_cols[index].button(sample.stem, use_container_width=True):
             st.session_state["sample"] = str(sample)
 
 #: (name, bytes) for every image to process this run.
@@ -361,8 +370,8 @@ if inputs:
             for row_start in range(0, len(bins_used), 3):
                 row = bins_used[row_start : row_start + 3]
                 columns = st.columns(3)
-                for column, bin_ in zip(columns, row, strict=False):
-                    with column:
+                for index, bin_ in enumerate(row):
+                    with columns[index]:
                         render_bin_card(bin_, session.items_in(bin_.key))
 
         # ---- composition
