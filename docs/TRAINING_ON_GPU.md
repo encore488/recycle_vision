@@ -147,19 +147,29 @@ overnight. **Pick Colab if** you want to be running in two minutes.
 `--sweep` ends with a per-class table at the operating point it chose:
 
 ```
-    class                   truth  predicted  matched  recall
-    metal can                   4          4        4  100.0%
+    class               truth  found  recall  named  correct  fires
+    metal can               4      4  100.0%      4   100.0%      4
 ```
 
-`predicted` counts every box carrying that label, matched or not, and it is
-the column that decides what to do next. A class with truth but **zero
-predictions** means the prompt never fired — the text encoder is reading those
-words as something else, and no amount of training fixes that; reword it in the
-vocabulary and rebuild embeddings. A class predicted often but matched rarely
-is finding objects and placing them badly, which is what training is for.
+Two label spaces are in play here, and the columns keep them apart:
 
-The aggregate rows above it cannot tell those apart, and they need opposite
-responses.
+- **found / recall** — ground-truth objects covered by a prediction of *any*
+  name. This is localisation: did the model see the thing at all.
+- **named / correct** — of those, the ones it also called correctly. This is
+  classification.
+- **fires** — predictions carrying this label, which may sit on objects of
+  other classes entirely. It lives in its own space, so it is *not* comparable
+  to the columns on its left and can exceed `truth`.
+
+What to do depends on which column is low:
+
+| symptom | meaning | fix |
+| --- | --- | --- |
+| `fires` is 0 with real `truth` | the prompt never fires | reword the vocabulary, rebuild embeddings — training cannot help |
+| high `recall`, low `correct` | found and misnamed | fine-tune; first check whether the confusion even changes a bin |
+| low `recall` at every threshold | genuinely not seen | training, or more data |
+
+Warnings only fire above 10 instances. Two ground-truth objects decide nothing.
 
 ## What success looks like
 

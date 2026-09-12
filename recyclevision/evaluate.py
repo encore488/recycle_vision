@@ -210,3 +210,77 @@ def score_routing(pairs: list[tuple[str, str]], policy: RoutingPolicy) -> Routin
             score.harmful_confusions[(predicted, actual)] += 1
 
     return score
+
+
+@dataclass(frozen=True)
+class ClassCounts:
+    """One class's tally at a single confidence threshold.
+
+    Two label spaces meet here and must not be added together. `truth`,
+    `found` and `named` count **ground-truth objects** of this class; `fires`
+    counts **predictions** carrying this class's name, which may sit on an
+    object of some other class entirely.
+
+    So `found <= truth` and `named <= found` always hold, while `fires` obeys
+    neither -- an over-eager prompt fires far more often than the class
+    occurs. Reporting `fires` beside the others without saying so produced a
+    table reading "4 predictions matched 140 objects".
+    """
+
+    #: Ground-truth instances of this class.
+    truth: int = 0
+    #: ...covered by a prediction of any name. Localisation.
+    found: int = 0
+    #: ...and that prediction also used the right name. Classification.
+    named: int = 0
+    #: Predictions carrying this class's name, matched or not.
+    fires: int = 0
+
+    @property
+    def recall(self) -> float:
+        return self.found / self.truth if self.truth else 0.0
+
+    @property
+    def naming_accuracy(self) -> float:
+        """Of the objects located, the share also named correctly.
+
+        Low here with high recall is a labelling problem, not a seeing
+        problem -- the boxes are on the right things under the wrong name,
+        which fine-tuning fixes and a prompt rewrite usually does not.
+        """
+        return self.named / self.found if self.found else 0.0
+
+
+def per_class_counts(
+    samples: list[tuple[list[tuple[str, BoundingBox, float]], list[tuple[str, BoundingBox]]]],
+    threshold: float = DEFAULT_IOU,
+) -> dict[str, ClassCounts]:
+    """Tally every class over a set of (predictions, truth) image pairs.
+
+    Keyed by every class appearing as ground truth *or* as a prediction, so a
+    prompt firing on a class the dataset never labels is still visible.
+    """
+    truth_count: Counter[str] = Counter()
+    fires_count: Counter[str] = Counter()
+    found_count: Counter[str] = Counter()
+    named_count: Counter[str] = Counter()
+
+    for predictions, truth in samples:
+        truth_count.update(label for label, _box in truth)
+        fires_count.update(label for label, _box, _conf in predictions)
+        for predicted_label, true_label in match_detections(
+            predictions, truth, threshold=threshold
+        ).pairs:
+            found_count[true_label] += 1
+            if predicted_label == true_label:
+                named_count[true_label] += 1
+
+    return {
+        name: ClassCounts(
+            truth=truth_count[name],
+            found=found_count[name],
+            named=named_count[name],
+            fires=fires_count[name],
+        )
+        for name in set(truth_count) | set(fires_count)
+    }

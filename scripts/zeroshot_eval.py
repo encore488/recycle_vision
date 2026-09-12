@@ -32,6 +32,7 @@ from recyclevision.evaluate import (  # noqa: E402
     best_overlaps,
     match_detections,
     overlap_histogram,
+    per_class_counts,
     score_routing,
 )
 from recyclevision.external import MappingError, read_yolo_data_yaml  # noqa: E402
@@ -49,6 +50,10 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 #: and the sweep could not see it. A sweep whose best value is at its own edge
 #: has not finished answering the question.
 SWEEP_THRESHOLDS = [0.001, 0.003, 0.005, 0.01, 0.03, 0.05, 0.10, 0.15, 0.25, 0.40]
+
+
+#: Below this many instances a per-class warning is noise, not signal.
+MIN_CLASS_INSTANCES = 10
 
 
 def read_truth(
@@ -280,42 +285,64 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         # Per class, at the operating point the table just chose. The aggregate
-        # above cannot distinguish "one class is invisible" from "every class is
-        # mediocre", and for an open-vocabulary model those need opposite fixes:
-        # a prompt that never fires is reworded, a prompt that fires and lands
-        # badly is trained. `predicted` is what separates them.
+        # above cannot distinguish "this class is never found" from "this class
+        # is found and called something else", and those need opposite fixes.
+        #
+        # Two label spaces are in play and they must not share a column: a
+        # ground-truth object is *found* by whatever prediction covers it,
+        # whatever that prediction is called, while a prompt *fires* under its
+        # own name. An earlier version of this table printed one count of each
+        # per row and produced rows reading "4 predictions matched 140
+        # objects", which is impossible and was believed anyway.
         if f1s:
             best_conf = thresholds[f1s.index(max(f1s))]
-            truth_count: Counter[str] = Counter()
-            predicted_count: Counter[str] = Counter()
-            matched_count: Counter[str] = Counter()
-            for predictions, truth in per_image:
-                kept_predictions = [p for p in predictions if p[2] >= best_conf]
-                truth_count.update(label for label, _b in truth)
-                predicted_count.update(label for label, _b, _c in kept_predictions)
-                result = match_detections(kept_predictions, truth, threshold=args.iou)
-                matched_count.update(true_label for _pred, true_label in result.pairs)
+            counts = per_class_counts(
+                [
+                    ([p for p in predictions if p[2] >= best_conf], truth)
+                    for predictions, truth in per_image
+                ],
+                threshold=args.iou,
+            )
 
             print(f"\n  per class, at conf {best_conf:.3f}")
-            print("    ('predicted' counts every box with that label, matched or not:")
-            print("     truth present with no predictions means the prompt never fired)")
-            print(f"    {'class':<22}{'truth':>7}{'predicted':>11}{'matched':>9}{'recall':>8}")
+            print("    found  = truth objects covered by a prediction of ANY name")
+            print("    named  = ...of those, the ones the model also called correctly")
+            print("    fires  = predictions carrying this label (its own label space,")
+            print("             so it is not comparable to the columns on its left)")
+            print(
+                f"    {'class':<18}{'truth':>7}{'found':>7}{'recall':>8}"
+                f"{'named':>7}{'correct':>9}{'fires':>7}"
+            )
             silent = []
-            for name in sorted(truth_count, key=lambda n: -truth_count[n]):
-                seen = truth_count[name]
-                hit = matched_count[name]
-                fired = predicted_count[name]
+            misnamed = []
+            for name in sorted(counts, key=lambda n: -counts[n].truth):
+                c = counts[name]
+                if not c.truth and not c.fires:
+                    continue
                 print(
-                    f"    {name:<22}{seen:>7}{fired:>11}{hit:>9}{hit / seen if seen else 0:>8.1%}"
+                    f"    {name:<18}{c.truth:>7}{c.found:>7}{c.recall:>8.1%}"
+                    f"{c.named:>7}{c.naming_accuracy:>9.1%}{c.fires:>7}"
                 )
-                if seen and not fired:
+                # Thresholds, not zero: two ground-truth objects decide nothing,
+                # and a warning drawn from them costs more than it is worth.
+                if c.truth >= MIN_CLASS_INSTANCES and not c.fires:
                     silent.append(name)
+                elif c.found >= MIN_CLASS_INSTANCES and c.naming_accuracy < 0.25:
+                    misnamed.append(name)
+
             if silent:
                 print(
-                    f"\n  ⚠️ never predicted, though present in the labels: {', '.join(silent)}\n"
-                    "     The prompt is not matching these at all. Reword it in the\n"
-                    "     vocabulary and rebuild embeddings; training cannot fix a\n"
-                    "     prompt the text encoder reads as something else."
+                    f"\n  ⚠️ prompt never fires: {', '.join(silent)}\n"
+                    "     Not a training problem — the text encoder is reading those\n"
+                    "     words as something else. Reword in the vocabulary and rebuild\n"
+                    "     embeddings."
+                )
+            if misnamed:
+                print(
+                    f"\n  ⚠️ found but misnamed: {', '.join(misnamed)}\n"
+                    "     Located reliably and called something else, so the boxes are\n"
+                    "     right and the labels are not. This is what fine-tuning fixes;\n"
+                    "     check first whether the confusion even changes a bin."
                 )
 
         best = max(recalls) if recalls else 0.0

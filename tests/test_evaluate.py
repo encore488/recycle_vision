@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from recyclevision.evaluate import score_routing
+from recyclevision.evaluate import per_class_counts, score_routing
+from recyclevision.models import BoundingBox
+
+
+def box(x1, y1, x2, y2) -> BoundingBox:
+    return BoundingBox(x1, y1, x2, y2)
 
 
 class TestScoreRouting:
@@ -168,3 +173,73 @@ class TestMatching:
         args = ([("p", self._box(5, 0, 15, 10), 0.9)], [("t", self._box(0, 0, 10, 10))])
         assert match_detections(*args, threshold=0.9).pairs == []
         assert match_detections(*args, threshold=0.3).pairs == [("p", "t")]
+
+
+class TestPerClassCounts:
+    """Two label spaces meet in this tally and must not be added together.
+
+    A ground-truth object is *found* by whatever prediction covers it, under
+    any name; a prompt *fires* under its own name, possibly onto an object of
+    a different class. An earlier report mixed the two per row and printed
+    "4 predictions matched 140 objects" -- impossible, and believed anyway.
+    """
+
+    def test_a_correct_detection_counts_everywhere(self):
+        counts = per_class_counts(
+            [([("metal can", box(0, 0, 10, 10), 0.9)], [("metal can", box(0, 0, 10, 10))])]
+        )
+        c = counts["metal can"]
+        assert (c.truth, c.found, c.named, c.fires) == (1, 1, 1, 1)
+        assert c.recall == 1.0
+        assert c.naming_accuracy == 1.0
+
+    def test_a_misnamed_detection_is_found_but_not_named(self):
+        # The box is right, the label is wrong: recall credits the truth
+        # class, naming accuracy does not, and `fires` credits the wrong one.
+        counts = per_class_counts(
+            [([("metal can", box(0, 0, 10, 10), 0.9)], [("plastic bottle", box(0, 0, 10, 10))])]
+        )
+        assert counts["plastic bottle"].found == 1
+        assert counts["plastic bottle"].named == 0
+        assert counts["plastic bottle"].naming_accuracy == 0.0
+        assert counts["plastic bottle"].fires == 0
+        assert counts["metal can"].fires == 1
+        assert counts["metal can"].truth == 0
+
+    def test_found_never_exceeds_truth(self):
+        # Five predictions on one object: only one can claim it.
+        predictions = [("metal can", box(0, 0, 10, 10), 0.9 - i / 100) for i in range(5)]
+        counts = per_class_counts([(predictions, [("metal can", box(0, 0, 10, 10))])])
+        c = counts["metal can"]
+        assert c.found <= c.truth
+        assert c.named <= c.found
+        assert c.fires == 5, "every prediction still counts as the prompt firing"
+
+    def test_fires_may_exceed_truth(self):
+        # The property that made the old single-column report impossible.
+        predictions = [
+            ("beverage carton", box(100 * i, 0, 100 * i + 10, 10), 0.9) for i in range(4)
+        ]
+        counts = per_class_counts([(predictions, [("beverage carton", box(0, 0, 10, 10))])])
+        assert counts["beverage carton"].fires > counts["beverage carton"].truth
+
+    def test_a_prompt_that_never_fires_is_visible(self):
+        counts = per_class_counts([([], [("glass bottle", box(0, 0, 10, 10))])])
+        c = counts["glass bottle"]
+        assert c.fires == 0 and c.truth == 1 and c.found == 0
+        assert c.recall == 0.0
+
+    def test_a_class_only_ever_predicted_still_appears(self):
+        # A prompt firing on something the dataset never labels is a real
+        # finding; dropping the row would hide it.
+        counts = per_class_counts([([("plastic bag", box(0, 0, 10, 10), 0.9)], [])])
+        assert counts["plastic bag"].fires == 1
+        assert counts["plastic bag"].truth == 0
+
+    def test_empty_input_is_empty_not_an_error(self):
+        assert per_class_counts([]) == {}
+
+    def test_rates_are_zero_rather_than_dividing_by_zero(self):
+        counts = per_class_counts([([("plastic bag", box(0, 0, 10, 10), 0.9)], [])])
+        assert counts["plastic bag"].recall == 0.0
+        assert counts["plastic bag"].naming_accuracy == 0.0
