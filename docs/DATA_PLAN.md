@@ -288,6 +288,33 @@ bound on error: annotation may not be exhaustive for those classes either.
 This is a limitation of the *dataset*, not of the harness, and it will not
 apply to your own footage — because you will label exhaustively.
 
+### With fair precision, the detector is usable
+
+```
+  conf   preds  matched   raw    fair   recall    F1
+  0.01    4422      183   4.1%   56.0%   52.6%   0.542
+  0.05     853       60   7.0%   65.2%   17.2%   0.272
+  0.15     165       12   7.3%   85.7%    3.4%   0.065
+```
+
+At conf 0.01: **56% fair precision at 52.6% recall, F1 0.54.** That is a working
+detector on a facility in another country it has never seen, with relentless
+clutter — not the 4% disaster the raw number suggested.
+
+**True precision is a range, not a measurement.** Raw 4.1% counts correct
+detections of unlabelled material as errors; fair 56.0% assumes every
+unlabelled-class prediction is correct. The answer is between, and the width of
+that gap is WaRP's annotation policy, not the model. The sweep now prints both
+bounds rather than either alone.
+
+**The best operating point was the lowest threshold tested** — which means the
+optimum was off the bottom of the range and the sweep could not see it. A sweep
+whose best value sits at its own edge has not finished answering the question,
+so it now extends to 0.001 and warns when the winner is still at the edge.
+
+The practical consequence: **0.15 was the wrong operating point by more than an
+order of magnitude.** The app's slider could not even reach the right range.
+
 ### Where this leaves the plan
 
 - Precision: **prompt scoping** (242 → 5 false positives) plus **area
@@ -295,9 +322,10 @@ apply to your own footage — because you will label exhaustively.
   configuration, and both are real wins that transfer.
 - Recall: the objects *are* being found at 0.01. The remaining work is score
   calibration and thresholding, not necessarily training.
-- Fine-tuning is still worth doing, but it is no longer the only option, and
-  the argument for it changed: it would be correcting confidence scores rather
-  than teaching the model to see.
+- Fine-tuning is worth doing, and the argument for it has sharpened: the model
+  already sees these objects, it ranks them badly. Supervised training on
+  WaRP's 8,285 plastic-bottle instances is precisely a calibration fix, and it
+  would remove the need to run at conf 0.01 to get recall.
 
 The user's own read of the images — "it can identify some, but not all of the
 visible materials, and the clutter is relentless" — matches 52.6% recall
