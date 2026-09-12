@@ -171,6 +171,28 @@ What to do depends on which column is low:
 
 Warnings only fire above 10 instances. Two ground-truth objects decide nothing.
 
+## "NMS time limit 2.800s exceeded"
+
+Expect this on `mps`, especially in the first few epochs. It is not cosmetic.
+
+Ultralytics allows a whole NMS batch `2.0 + 0.05 × batch_size` seconds — 2.8s
+for the 16-image validation batch. On timeout it breaks out of its **per-image**
+loop, and every image it had not reached keeps the empty tensor it was
+initialised with, scored as *the model predicted nothing*. One slow batch can
+zero fifteen of sixteen images.
+
+That reaches further than a wrong number on screen: validation fitness picks
+which epoch becomes `best.pt` and when `patience` stops the run. A slow NMS
+silently changes which weights you keep.
+
+Torchvision ships no fast MPS NMS kernel, and early epochs are the worst case —
+the model is still emitting thousands of low-confidence boxes, so NMS has the
+most work to do exactly when it is slowest. `train.py` raises the per-image
+budget on `mps` and `cpu`, and leaves CUDA alone, where it effectively never
+fires. The watchdog stays: it just stops firing during normal slow work.
+
+If you see the warning, you are on an older checkout — `git pull`.
+
 ## What success looks like
 
 Zero-shot on WaRP, for comparison:

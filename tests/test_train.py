@@ -10,6 +10,8 @@ No torch and no weights here: only the decisions made before either loads.
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -68,3 +70,76 @@ def test_describe_geometry_reads_a_dataset_on_disk(tmp_path):
     geometry, labels_dir = train.describe_geometry(data)
     assert geometry == BOXES
     assert labels_dir == labels
+
+
+class TestNmsBudget:
+    """Ultralytics gives a whole NMS batch `2.0 + 0.05 * batch` seconds and,
+    on timeout, breaks out of its per-image loop -- leaving every image it
+    never reached with the empty tensor it was initialised with. Those images
+    score as "predicted nothing", so validation understates the model, and
+    validation is what picks best.pt and trips `patience`.
+    """
+
+    @staticmethod
+    def _fake_ultralytics(monkeypatch):
+        """Stand in for ultralytics.utils.nms, so this runs without torch."""
+        calls = []
+
+        def non_max_suppression(*args, **kwargs):
+            calls.append(kwargs)
+            return []
+
+        nms = types.ModuleType("ultralytics.utils.nms")
+        nms.non_max_suppression = non_max_suppression
+        utils = types.ModuleType("ultralytics.utils")
+        utils.nms = nms
+        root = types.ModuleType("ultralytics")
+        root.utils = utils
+        for name, module in (
+            ("ultralytics", root),
+            ("ultralytics.utils", utils),
+            ("ultralytics.utils.nms", nms),
+        ):
+            monkeypatch.setitem(sys.modules, name, module)
+        return nms, calls
+
+    def test_the_budget_is_raised_on_mps(self, monkeypatch):
+        nms, calls = self._fake_ultralytics(monkeypatch)
+        train.relax_nms_time_limit("mps")
+        nms.non_max_suppression("preds", 0.001)
+        assert calls[0]["max_time_img"] == train.NMS_SECONDS_PER_IMAGE
+
+    def test_cuda_is_left_alone(self, monkeypatch):
+        # There the stock budget is ample, and quietly changing a CUDA run's
+        # behaviour to fix an Apple Silicon problem would be its own surprise.
+        nms, _calls = self._fake_ultralytics(monkeypatch)
+        before = nms.non_max_suppression
+        train.relax_nms_time_limit("0")
+        assert nms.non_max_suppression is before
+
+    def test_an_explicit_caller_still_wins(self, monkeypatch):
+        nms, calls = self._fake_ultralytics(monkeypatch)
+        train.relax_nms_time_limit("cpu")
+        nms.non_max_suppression("preds", max_time_img=0.01)
+        assert calls[0]["max_time_img"] == 0.01
+
+    def test_patching_twice_does_not_stack_wrappers(self, monkeypatch):
+        nms, _calls = self._fake_ultralytics(monkeypatch)
+        train.relax_nms_time_limit("mps")
+        once = nms.non_max_suppression
+        train.relax_nms_time_limit("mps")
+        assert nms.non_max_suppression is once
+
+    def test_a_missing_ultralytics_is_not_an_error(self, monkeypatch):
+        # train.py is importable without torch installed; this must stay true.
+        for name in ("ultralytics", "ultralytics.utils", "ultralytics.utils.nms"):
+            monkeypatch.setitem(sys.modules, name, None)
+        train.relax_nms_time_limit("mps")  # must not raise
+
+    def test_the_raised_budget_actually_clears_a_real_batch(self):
+        # The arithmetic that matters: a 16-image validation batch was getting
+        # 2.8s total, which is what the observed warning reported.
+        stock = 2.0 + 0.05 * 16
+        raised = 2.0 + train.NMS_SECONDS_PER_IMAGE * 16
+        assert stock == pytest.approx(2.8)
+        assert raised > 10 * stock

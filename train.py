@@ -30,6 +30,10 @@ from recyclevision.external import BOXES, EMPTY, MIXED, POLYGONS  # noqa: E402
 DETECT_MODEL = "yolo11s.pt"
 SEGMENT_MODEL = "yolo11s-seg.pt"
 
+#: Per-image NMS budget on devices without a fast NMS kernel. The stock 0.05
+#: is a fraction of what MPS needs early in training -- see `relax_nms_time_limit`.
+NMS_SECONDS_PER_IMAGE = 2.0
+
 
 def resolve_device(requested: str | None) -> str:
     """Pick a device, and say why.
@@ -105,6 +109,56 @@ def choose_model(requested: str | None, geometry: str, data: Path) -> str:
     return requested
 
 
+def relax_nms_time_limit(device: str) -> None:
+    """Stop ultralytics' NMS watchdog quietly emptying validation batches.
+
+    `non_max_suppression` allows a whole batch `2.0 + 0.05 * batch_size`
+    seconds. On timeout it breaks out of its **per-image** loop, and every
+    image it never reached keeps the empty tensor it was initialised with --
+    scored as "the model predicted nothing". A single slow batch can therefore
+    zero out fifteen of sixteen images.
+
+    That matters beyond a wrong number on screen: validation fitness decides
+    which epoch becomes best.pt and when `patience` stops the run. A slow NMS
+    silently changes which weights you keep.
+
+    Torchvision ships no fast MPS NMS kernel, so on Apple Silicon a busy early
+    epoch trips this routinely -- while the model is still emitting thousands
+    of low-confidence boxes and NMS has the most work to do. On CUDA it
+    effectively never fires, so the budget is raised only where it bites.
+
+    The watchdog is still there. It exists to stop a runaway NMS hanging a
+    run, and a 16-image batch keeps a bound of about half a minute; it just
+    stops firing during normal slow work.
+    """
+    if device not in {"mps", "cpu"}:
+        return
+
+    try:
+        from ultralytics.utils import nms as nms_module
+    except ImportError:  # older layouts kept it in utils.ops
+        try:
+            from ultralytics.utils import ops as nms_module  # type: ignore[no-redef]
+        except ImportError:
+            return
+
+    original = getattr(nms_module, "non_max_suppression", None)
+    if original is None or getattr(original, "_budget_raised", False):
+        return
+
+    def patched(*args, **kwargs):
+        # Only a default: an explicit caller still wins.
+        kwargs.setdefault("max_time_img", NMS_SECONDS_PER_IMAGE)
+        return original(*args, **kwargs)
+
+    patched._budget_raised = True
+    nms_module.non_max_suppression = patched
+    print(
+        f"  NMS budget raised to {NMS_SECONDS_PER_IMAGE}s/image on {device}; "
+        "the default silently drops\n  whole validation batches here."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=Path("datasets/conveyor/data.yaml"))
@@ -158,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     from ultralytics import YOLO
 
     device = resolve_device(args.device)
+    relax_nms_time_limit(device)
     name = args.name or f"conveyor_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}"
 
     print(f"fine-tuning {model_name} on {args.data}")
