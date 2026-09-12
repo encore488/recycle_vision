@@ -42,9 +42,13 @@ from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary  # noqa: E402
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 
-#: Confidences reported by --sweep. The low end matters most: if recall is
-#: still near zero at 0.01, the objects are not being detected at all.
-SWEEP_THRESHOLDS = [0.01, 0.03, 0.05, 0.10, 0.15, 0.25, 0.40]
+#: Confidences reported by --sweep.
+#:
+#: Extends well below 0.01 because on WaRP the best F1 landed at the lowest
+#: threshold tested, which means the optimum was off the bottom of the range
+#: and the sweep could not see it. A sweep whose best value is at its own edge
+#: has not finished answering the question.
+SWEEP_THRESHOLDS = [0.001, 0.003, 0.005, 0.01, 0.03, 0.05, 0.10, 0.15, 0.25, 0.40]
 
 
 def read_truth(
@@ -211,11 +215,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.sweep:
         print("\nby confidence threshold")
-        print("  ('fair' counts a false positive only for classes this dataset labels)")
-        header = f"  {'conf':>6}{'preds':>8}{'matched':>9}{'prec':>8}{'fair':>8}{'recall':>9}"
+        print("  ('fair' counts a false positive only for classes this dataset labels;")
+        print("   F1 combines fair precision with recall, to pick an operating point)")
+        header = (
+            f"  {'conf':>7}{'preds':>8}{'matched':>9}{'prec':>7}{'fair':>7}{'recall':>8}{'F1':>7}"
+        )
         print(header)
         recalls: list[float] = []
         fairs: list[float] = []
+        f1s: list[float] = []
+        raws: list[float] = []
         for threshold in thresholds:
             kept = [
                 ([p for p in predictions if p[2] >= threshold], truth)
@@ -233,19 +242,42 @@ def main(argv: list[str] | None = None) -> int:
             precision = total_matched / total_found if total_found else 0.0
             fair = total_matched / scoreable if scoreable else 0.0
             recall = total_matched / findable if findable else 0.0
+            f1 = 2 * fair * recall / (fair + recall) if (fair + recall) else 0.0
             recalls.append(recall)
             fairs.append(fair)
+            f1s.append(f1)
+            raws.append(precision)
             print(
-                f"  {threshold:>6.2f}{total_found:>8}{total_matched:>9}"
-                f"{precision:>7.1%}{fair:>8.1%}{recall:>9.1%}"
+                f"  {threshold:>7.3f}{total_found:>8}{total_matched:>9}"
+                f"{precision:>7.1%}{fair:>7.1%}{recall:>8.1%}{f1:>7.3f}"
             )
         # Judge from the curve, not from a canned sentence. The histogram above
         # can look damning while this table shows the detections plainly exist,
         # and an earlier version of this script printed exactly that
         # contradiction.
         print(f"\n  this dataset annotates only: {', '.join(sorted(labelled_classes))}")
-        if fairs:
-            print(f"  best 'fair' precision across thresholds: {max(fairs):.1%}")
+
+        if f1s:
+            best_index = f1s.index(max(f1s))
+            best_conf = thresholds[best_index]
+            print(
+                f"  best operating point: conf {best_conf:.3f} — "
+                f"fair precision {fairs[best_index]:.1%}, recall {recalls[best_index]:.1%}, "
+                f"F1 {f1s[best_index]:.3f}"
+            )
+            if best_index == 0:
+                print("  ⚠️ that is the lowest threshold tested, so the true optimum may be")
+                print("     lower still. Widen SWEEP_THRESHOLDS before trusting it.")
+
+            # Precision here is a range, not a measurement, and saying so is the
+            # difference between an honest report and a flattering one.
+            print(
+                f"\n  at that point true precision lies between {raws[best_index]:.1%} and "
+                f"{fairs[best_index]:.1%}:\n"
+                f"    raw  counts correct detections of unlabelled material as errors\n"
+                f"    fair assumes every unlabelled-class prediction is correct\n"
+                f"  Neither bound is the answer, and the gap is this dataset's doing."
+            )
 
         best = max(recalls) if recalls else 0.0
         at_default = recalls[thresholds.index(0.15)] if 0.15 in thresholds else 0.0
