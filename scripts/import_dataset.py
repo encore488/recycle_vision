@@ -27,8 +27,10 @@ from recyclevision.external import (  # noqa: E402
     ClassMapping,
     MappingError,
     build_index_map,
+    looks_already_imported,
     read_yolo_data_yaml,
     remap_label_line,
+    trees_overlap,
 )
 from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary  # noqa: E402
 
@@ -58,7 +60,30 @@ def main(argv: list[str] | None = None) -> int:
     for index, name in enumerate(source_classes):
         print(f"  {index:3}  {name}")
 
-    # Refuse before touching the filesystem, so a wrong mapping costs nothing.
+    vocabulary = Vocabulary.load(args.vocabulary)
+
+    # Everything below refuses before touching the filesystem, so a wrong
+    # invocation costs nothing.
+
+    if trees_overlap(source_root, args.out):
+        parser.error(
+            f"\n--out {args.out} is the same tree as the source at {source_root}.\n"
+            "The import would rewrite the labels it is reading and then fail "
+            "copying files onto themselves, leaving the source half-converted.\n"
+            "Point --out at a new directory."
+        )
+
+    if looks_already_imported(source_classes, vocabulary.classes):
+        parser.error(
+            f"\n{args.data_yaml} is already in the {vocabulary.name} vocabulary — "
+            "it looks like\nthis script's own output, not an outside dataset.\n\n"
+            "Point at the original download instead. Both files are called "
+            "data.yaml, so:\n"
+            "    find ~ -name data.yaml -not -path '*/datasets/*'\n\n"
+            "To pick up a vocabulary change, re-import from that original — "
+            "re-importing an\nimport cannot recover what the first one discarded."
+        )
+
     missing = mapping.unmapped(source_classes)
     if missing:
         parser.error(
@@ -67,7 +92,6 @@ def main(argv: list[str] | None = None) -> int:
             "unmapped would teach the model those objects are background."
         )
 
-    vocabulary = Vocabulary.load(args.vocabulary)
     unknown = mapping.unknown_targets(vocabulary.classes)
     if unknown:
         parser.error(

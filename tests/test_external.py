@@ -213,3 +213,50 @@ def test_split_images_dir_accepts_a_list_of_paths(tmp_path):
     data = tmp_path / "data.yaml"
     data.write_text("path: .\ntrain:\n  - images/a\n  - images/b\nnames: [x]\n", encoding="utf-8")
     assert external.read_split_images_dir(data, "train") == (tmp_path / "images" / "a")
+
+
+# --- pointing the importer at the wrong thing -------------------------------
+
+
+def test_a_tree_overlaps_itself(tmp_path):
+    assert external.trees_overlap(tmp_path, tmp_path)
+
+
+def test_an_output_nested_in_its_source_overlaps(tmp_path):
+    # Writing into the tree being read rewrites the labels mid-walk.
+    assert external.trees_overlap(tmp_path, tmp_path / "out")
+    assert external.trees_overlap(tmp_path / "out", tmp_path)
+
+
+def test_sibling_trees_do_not_overlap(tmp_path):
+    assert not external.trees_overlap(tmp_path / "source", tmp_path / "out")
+
+
+def test_overlap_survives_a_relative_path(tmp_path, monkeypatch):
+    # `--out datasets/warp` against an absolute source is the realistic shape.
+    monkeypatch.chdir(tmp_path)
+    assert external.trees_overlap(tmp_path / "warp", Path("warp"))
+
+
+def test_a_dataset_in_our_own_vocabulary_is_recognised():
+    # datasets/warp/data.yaml instead of the original download: both are
+    # called data.yaml and one of them is in the working tree.
+    ours = ["metal can", "plastic bottle", "paper cup"]
+    assert external.looks_already_imported(ours, ours + ["beverage carton"])
+
+
+def test_an_outside_dataset_is_not_mistaken_for_ours():
+    assert not external.looks_already_imported(
+        ["bottle-blue", "cans", "juice-cardboard"], ["metal can", "plastic bottle"]
+    )
+
+
+def test_a_partial_overlap_is_not_enough():
+    # A source that shares some names with us is still an outside dataset.
+    assert not external.looks_already_imported(
+        ["metal can", "bottle-blue"], ["metal can", "plastic bottle"]
+    )
+
+
+def test_an_empty_class_list_is_not_an_import():
+    assert not external.looks_already_imported([], ["metal can"])

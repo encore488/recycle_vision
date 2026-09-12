@@ -235,3 +235,25 @@ def inspect_label_geometry(labels_dir: Path, sample: int = 300) -> str:
     if has_boxes:
         return BOXES
     return EMPTY
+
+
+def trees_overlap(a: Path, b: Path) -> bool:
+    """Whether two directory paths are the same, or one contains the other.
+
+    Importing a dataset into its own source rewrites the labels being read and
+    then fails partway through copying files onto themselves, leaving the
+    source half-converted. Cheap to rule out, expensive to discover.
+    """
+    a, b = a.resolve(), b.resolve()
+    return a == b or a in b.parents or b in a.parents
+
+
+def looks_already_imported(source_classes: list[str], vocabulary_classes: list[str]) -> bool:
+    """Whether a "source" dataset is really this project's own import output.
+
+    Pointing at `datasets/warp/data.yaml` instead of the original download is
+    an easy mistake -- both are called data.yaml and one sits in the working
+    tree. Every class already being one of ours is the giveaway, and saying so
+    beats listing sixteen class names the user never wrote.
+    """
+    return bool(source_classes) and set(source_classes) <= set(vocabulary_classes)

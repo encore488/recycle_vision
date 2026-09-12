@@ -60,11 +60,17 @@ python scripts/import_dataset.py path/to/Warp-D-yolo/data.yaml \
     --mapping mappings/warp.yaml --out datasets/warp
 ```
 
-Not sure where the original download went:
+Point at the **original download**, not at `datasets/warp/data.yaml` — that
+one is the previous import's output, and re-importing an import cannot recover
+what the first one discarded. Both files are called `data.yaml`, so exclude the
+working tree when you look:
 
 ```bash
-find ~ -name data.yaml -path '*arp*' 2>/dev/null
+find ~ -name data.yaml -not -path '*/datasets/*'
 ```
+
+`import_dataset.py` refuses either mistake — a source already in our vocabulary,
+or an `--out` pointing inside its own source — before writing anything.
 
 Expect `beverage carton 812` where it used to say `paper cup 812`. Minutes of
 work, ahead of hours of training — and the notebook does it for you.
