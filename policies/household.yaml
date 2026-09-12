@@ -330,6 +330,21 @@ rules:
     certainty: high
     rationale: Plastic-lined and rejected by most programs, despite looking like plain paper.
 
+  # Reads like the cup above -- paper with a plastic lining -- and goes the
+  # other way. Cartons have a kerbside outlet across most of the country
+  # because the board grade is worth recovering; a cup does not. This is
+  # precisely the kind of pair a material label cannot separate and an item
+  # label can.
+  beverage carton:
+    bin: recycling
+    item: Beverage carton
+    material: liquid paperboard
+    handling: Empty and rinse. Push the straw in, leave the cap on, do not flatten.
+    certainty: low
+    rationale: >-
+      Accepted by most kerbside programs but not all, and a few want cartons
+      kept separate from paper. Worth checking locally once.
+
   styrofoam:
     bin: landfill
     item: Polystyrene foam

@@ -260,6 +260,24 @@ rules:
     handling: Poly-lined; a standard fibre mill cannot pulp it.
     certainty: high
 
+  # Not the same call as the cup above, though both are lined paper. A carton
+  # is a thick, uniform poly-coat on a defined board grade, which hydrapulpers
+  # at carton-capable mills separate routinely; a cup is a thin coat on mixed
+  # stock and is not worth recovering. Certainty is low because the answer is
+  # a property of the receiving mill, not of the item -- a facility without an
+  # outlet sends these to residue, and this rule is what it edits.
+  beverage carton:
+    bin: fibre
+    item: Beverage carton
+    material: liquid paperboard
+    handling: >-
+      Keep dry and keep it out of the OCC bale if the mill will not take
+      coated stock -- confirm the outlet before diverting.
+    certainty: low
+    rationale: >-
+      Recoverable wherever a carton outlet exists, and residue where none
+      does. The item does not decide this; the contract does.
+
   styrofoam:
     bin: residue
     item: Polystyrene foam

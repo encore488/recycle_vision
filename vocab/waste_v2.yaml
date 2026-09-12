@@ -64,11 +64,16 @@ classes:
   - glass jar
   - empty drinking glass
 
-  # Fibre
+  # Fibre. Three destinations hide in here, which is why it is not one class:
+  # plain fibre is recyclable, a poly-lined cup is not, and a beverage carton
+  # is -- but only at a mill equipped for the coating, so it is often its own
+  # stream. A carton and a cup are both "lined paper" and go to different
+  # places, so the vocabulary has to be able to say which is which.
   - cardboard box
   - sheet of paper
   - newspaper
   - paper cup
+  - beverage carton
 
   # Organics
   - food waste

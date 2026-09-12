@@ -37,6 +37,11 @@ materials:
   glass:        {co2e_kg_per_kg: 0.3,  basis: estimate}
   paper:        {co2e_kg_per_kg: 3.0,  basis: estimate}
   lined paper:  {co2e_kg_per_kg: 0.0,  basis: not-recycled-kerbside}
+  # Distinct from `lined paper` above, which is zero because a lined cup is
+  # not recovered. A carton is, and its fibre is long and valuable -- but
+  # only the fibre: the polyethylene and any foil layer are lost, so this
+  # sits below plain paper rather than beside it.
+  liquid paperboard: {co2e_kg_per_kg: 2.0,  basis: estimate}
   organic:      {co2e_kg_per_kg: 0.2,  basis: estimate}
 
 # Typical mass of one item, in grams, keyed by detector class name.
@@ -63,4 +68,5 @@ items:
   paper:                {mass_g: 5,   material: paper}
   newspaper:            {mass_g: 200, material: paper}
   paper cup:            {mass_g: 12,  material: lined paper}
+  beverage carton:      {mass_g: 30,  material: liquid paperboard}
   food waste:           {mass_g: 100, material: organic}

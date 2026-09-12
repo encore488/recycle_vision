@@ -47,6 +47,24 @@ than from memory.
 
 ---
 
+## Re-import WaRP before you train
+
+The first version of `mappings/warp.yaml` sent WaRP's 812 beverage cartons to
+`paper cup`, which routes to landfill with `certainty: high` — the wrong bin on
+the second-largest class in the dataset. `waste_v2` now has a `beverage carton`
+class and both policies route it, so the mapping is fixed, but **the class
+indices changed**. A dataset imported before that is wrong on disk:
+
+```bash
+python scripts/import_dataset.py <warp>/data.yaml \
+    --mapping mappings/warp.yaml --out datasets/warp
+```
+
+Expect `beverage carton 812` where it used to say `paper cup 812`. Minutes of
+work, ahead of hours of training — and the notebook does it for you.
+
+---
+
 ## Colab (recommended)
 
 Open **[`notebooks/train_colab.ipynb`](../notebooks/train_colab.ipynb)** —

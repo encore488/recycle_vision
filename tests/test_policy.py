@@ -7,6 +7,7 @@ import copy
 import pytest
 
 from recyclevision.models import Certainty
+from recyclevision.pipeline import DEFAULT_POLICY
 from recyclevision.policy import PolicyError, RoutingPolicy
 from tests.conftest import MINIMAL_POLICY, make_detection
 
@@ -228,3 +229,31 @@ class TestVocabularyCoverage:
                     gaps[f"{policy_path.name} x {vocab_path.name}"] = missing
 
         assert not gaps, f"vocabulary classes with no routing rule: {gaps}"
+
+
+# --- cartons ----------------------------------------------------------------
+#
+# A beverage carton and a lined paper cup are both "plastic-coated paper" and
+# go to opposite bins. Routing them the same way is the exact failure this
+# project is built to avoid, and it shipped once: WaRP's 812 cartons were
+# mapped to `paper cup` and sent to landfill with certainty: high.
+
+
+@pytest.mark.parametrize("policy_file", ["household.yaml", "mrf_conveyor.yaml"])
+def test_a_carton_is_not_routed_like_a_lined_cup(policy_file):
+    policy = RoutingPolicy.load(DEFAULT_POLICY.parent / policy_file)
+    carton = policy.route(make_detection("beverage carton"))
+    cup = policy.route(make_detection("paper cup"))
+
+    assert carton is not None, "every shipped policy needs a rule for cartons"
+    assert cup is not None
+    assert carton.bin.key != cup.bin.key
+    assert carton.bin.diverted and not cup.bin.diverted
+
+
+@pytest.mark.parametrize("policy_file", ["household.yaml", "mrf_conveyor.yaml"])
+def test_carton_routing_admits_it_depends_on_the_programme(policy_file):
+    # Whether a carton is recovered is a fact about the receiving mill, not
+    # about the item. A rule claiming otherwise would be overstating itself.
+    policy = RoutingPolicy.load(DEFAULT_POLICY.parent / policy_file)
+    assert policy.route(make_detection("beverage carton")).certainty is Certainty.LOW

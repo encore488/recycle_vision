@@ -64,3 +64,38 @@ class TestRequirementsTxt:
         text = REQUIREMENTS.read_text()
         for package in ("streamlit", "ultralytics", "pillow", "pyyaml"):
             assert package in text, package
+
+
+class TestVocabularyEmbeddings:
+    """Editing a vocabulary without rebuilding its cache breaks the live app.
+
+    `Vocabulary.load_embeddings` refuses a cache built for a different class
+    list, which is right -- a silently misaligned cache would mislabel every
+    detection. But the refusal happens at first inference, on the host, after
+    a deploy that looked fine. Adding `beverage carton` to waste_v2 is exactly
+    the edit that would have done it.
+
+    Needs torch to read the cache, which CI does not install, so it skips
+    rather than fails there. It still catches the mistake wherever the
+    embeddings were actually built -- which is where the mistake gets made.
+    """
+
+    @pytest.mark.parametrize(
+        "vocab_path",
+        sorted((PROJECT_ROOT / "vocab").glob("*.yaml")),
+        ids=lambda p: p.stem,
+    )
+    def test_cached_embeddings_match_the_class_list(self, vocab_path):
+        torch = pytest.importorskip("torch", reason="cache is a torch pickle")
+        import yaml
+
+        cache = vocab_path.with_suffix(".pt")
+        if not cache.is_file():
+            pytest.skip(f"{vocab_path.name} ships no embeddings cache")
+
+        declared = yaml.safe_load(vocab_path.read_text(encoding="utf-8"))["classes"]
+        cached = torch.load(cache, weights_only=False)["classes"]
+        assert cached == declared, (
+            f"{cache.name} is stale. Rebuild it:\n"
+            f"    python scripts/build_vocab_embeddings.py {vocab_path}"
+        )

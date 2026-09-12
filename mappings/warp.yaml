@@ -4,8 +4,11 @@
 # control and available to a hosted training environment. It reproduces the
 # reported instance counts exactly:
 #
-#   plastic bottle 8285 · paper cup 812 · metal can 660 · glass bottle 534
-#   cardboard box 83
+#   plastic bottle 8285 · beverage carton 812 · metal can 660
+#   glass bottle 534 · cardboard box 83
+#
+# (The 812 were imported as `paper cup` before the carton class existed. If
+# your dataset predates that, re-import -- the class indices have changed.)
 #
 # If your local copy differs, yours wins — `import_dataset.py` lists every
 # class it finds and refuses on any it has no rule for, so a mismatch is loud
@@ -61,8 +64,13 @@ mapping:
   glass-green: glass bottle
 
   # --- fibre --------------------------------------------------------------
-  juice-cardboard: paper cup
-  milk-cardboard: paper cup
+  # These two were mapped to `paper cup` in the first version of this file,
+  # which routed 812 instances -- the second-largest class in WaRP -- to
+  # landfill with certainty: high. Both are beverage cartons, and a carton
+  # has a kerbside outlet where a lined cup does not. Same material, opposite
+  # bin: exactly the distinction this project exists to make, got wrong.
+  juice-cardboard: beverage carton
+  milk-cardboard: beverage carton
   detergent-box: cardboard box
 
 cannot_express:
@@ -71,4 +79,6 @@ cannot_express:
   - plastic tub, plastic cup, plastic bag, plastic wrapper — no film or tub/cup classes in Warp-D
   - metal bottle cap — caps are not labelled separately
   - sheet of paper, newspaper — no plain-paper class, only cardboard containers
+  - lined paper cup — WaRP's only lined fibre is cartons, so the cup-to-landfill
+    case still has no training data and needs the conveyor footage
   - anything organic — no organics class
