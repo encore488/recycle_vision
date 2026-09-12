@@ -182,6 +182,16 @@ def main(argv: list[str] | None = None) -> int:
         help="'auto' (default) picks CUDA, then Apple Silicon 'mps', then 'cpu'. "
         "Override with '0', 'mps' or 'cpu'.",
     )
+    parser.add_argument(
+        "--cache",
+        choices=["ram", "disk"],
+        default=None,
+        help="cache decoded images between epochs. MPS runs with zero dataloader "
+        "workers, so JPEG decoding sits on the main thread between batches and "
+        "this buys back real time. 'disk' writes .npy beside the images; 'ram' is "
+        "faster but holds every image at --imgsz at once, which on a unified-memory "
+        "Mac competes with the model and can cost far more than it saves.",
+    )
     parser.add_argument("--name", default=None, help="run name under runs/")
     parser.add_argument(
         "--patience",
@@ -224,6 +234,14 @@ def main(argv: list[str] | None = None) -> int:
         print("  CPU only — this will take many hours. See docs/TRAINING_ON_GPU.md")
     elif device == "mps":
         print("  Apple Silicon GPU. Much faster than CPU, still slower than a hosted T4.")
+    if args.cache == "ram":
+        # Roughly imgsz^2 * 3 bytes per image, all resident at once.
+        gigabytes = args.imgsz * args.imgsz * 3 * 2500 / 1e9
+        print(
+            f"  --cache ram will hold ~{gigabytes:.0f}GB of decoded images. On unified\n"
+            "  memory that competes with the model itself; use --cache disk if the\n"
+            "  machine starts swapping."
+        )
 
     model = YOLO(model_name)
     results = model.train(
@@ -233,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         batch=args.batch,
         device=device,
         patience=args.patience,
+        cache=args.cache or False,
         # No `project=`: ultralytics already nests runs under runs/<task>/,
         # and passing one produced runs/segment/runs/<name>.
         name=name,
@@ -250,6 +269,7 @@ def main(argv: list[str] | None = None) -> int:
                 "imgsz": args.imgsz,
                 "batch": args.batch,
                 "patience": args.patience,
+                "cache": args.cache,
                 "started_utc": name,
             },
             indent=2,

@@ -193,6 +193,35 @@ fires. The watchdog stays: it just stops firing during normal slow work.
 
 If you see the warning, you are on an older checkout — `git pull`.
 
+## If an epoch suddenly takes hours
+
+A healthy `mps` epoch here is ~1.8s/it, about 9 minutes plus a minute of
+validation. If you see 30-40s/it, the model has not changed — the machine has.
+In one overnight run epochs 11 and 12 took 2h31 and 3h38 while 13 went straight
+back to 1.8s/it.
+
+Train and validation slow by the same factor, which rules out anything
+NMS- or model-specific. The usual causes, in order:
+
+- **The Mac slept or throttled.** Overnight on battery, or with the lid shut,
+  macOS cuts sustained GPU clocks hard. Keep it on AC and hold it awake —
+  without restarting the run, from a second terminal:
+  ```bash
+  caffeinate -dimsu -w $(pgrep -f "train.py --data")
+  ```
+  That keeps the machine awake exactly as long as training lives.
+- **Memory pressure.** ~9.5GB of unified memory goes to the model at
+  `--imgsz 960 --batch 8`. Once macOS starts swapping, everything degrades
+  together. Check Activity Monitor → Memory → Memory Pressure; if it is not
+  green, close things or drop `--batch`.
+- **Something else woke up** — Time Machine, Spotlight reindexing, a sync
+  client.
+
+`--cache disk` helps a little in general: MPS runs with zero dataloader
+workers, so JPEG decoding shares the main thread with training. **Do not use
+`--cache ram` on a machine that is already swapping** — it holds every image at
+`--imgsz` at once, about 6.5GB at 960px, and makes the real problem worse.
+
 ## What success looks like
 
 Zero-shot on WaRP, for comparison:
