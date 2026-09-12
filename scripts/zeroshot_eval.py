@@ -279,6 +279,45 @@ def main(argv: list[str] | None = None) -> int:
                 f"  Neither bound is the answer, and the gap is this dataset's doing."
             )
 
+        # Per class, at the operating point the table just chose. The aggregate
+        # above cannot distinguish "one class is invisible" from "every class is
+        # mediocre", and for an open-vocabulary model those need opposite fixes:
+        # a prompt that never fires is reworded, a prompt that fires and lands
+        # badly is trained. `predicted` is what separates them.
+        if f1s:
+            best_conf = thresholds[f1s.index(max(f1s))]
+            truth_count: Counter[str] = Counter()
+            predicted_count: Counter[str] = Counter()
+            matched_count: Counter[str] = Counter()
+            for predictions, truth in per_image:
+                kept_predictions = [p for p in predictions if p[2] >= best_conf]
+                truth_count.update(label for label, _b in truth)
+                predicted_count.update(label for label, _b, _c in kept_predictions)
+                result = match_detections(kept_predictions, truth, threshold=args.iou)
+                matched_count.update(true_label for _pred, true_label in result.pairs)
+
+            print(f"\n  per class, at conf {best_conf:.3f}")
+            print("    ('predicted' counts every box with that label, matched or not:")
+            print("     truth present with no predictions means the prompt never fired)")
+            print(f"    {'class':<22}{'truth':>7}{'predicted':>11}{'matched':>9}{'recall':>8}")
+            silent = []
+            for name in sorted(truth_count, key=lambda n: -truth_count[n]):
+                seen = truth_count[name]
+                hit = matched_count[name]
+                fired = predicted_count[name]
+                print(
+                    f"    {name:<22}{seen:>7}{fired:>11}{hit:>9}{hit / seen if seen else 0:>8.1%}"
+                )
+                if seen and not fired:
+                    silent.append(name)
+            if silent:
+                print(
+                    f"\n  ⚠️ never predicted, though present in the labels: {', '.join(silent)}\n"
+                    "     The prompt is not matching these at all. Reword it in the\n"
+                    "     vocabulary and rebuild embeddings; training cannot fix a\n"
+                    "     prompt the text encoder reads as something else."
+                )
+
         best = max(recalls) if recalls else 0.0
         at_default = recalls[thresholds.index(0.15)] if 0.15 in thresholds else 0.0
         print()

@@ -142,6 +142,25 @@ overnight. **Pick Colab if** you want to be running in two minutes.
 
 ---
 
+## Reading a sweep
+
+`--sweep` ends with a per-class table at the operating point it chose:
+
+```
+    class                   truth  predicted  matched  recall
+    metal can                   4          4        4  100.0%
+```
+
+`predicted` counts every box carrying that label, matched or not, and it is
+the column that decides what to do next. A class with truth but **zero
+predictions** means the prompt never fired — the text encoder is reading those
+words as something else, and no amount of training fixes that; reword it in the
+vocabulary and rebuild embeddings. A class predicted often but matched rarely
+is finding objects and placing them badly, which is what training is for.
+
+The aggregate rows above it cannot tell those apart, and they need opposite
+responses.
+
 ## What success looks like
 
 Zero-shot on WaRP, for comparison:
