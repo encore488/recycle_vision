@@ -233,7 +233,12 @@ a good open-vocabulary model, not a bad closed-set one.
 
 Separates "used a model" from "understands ML". Gated on real data.
 
-- [ ] **Import SortWaste and measure zero-shot on it.** The first honest number this
+- [x] **Measured zero-shot on real conveyor data** (WaRP, 200 val images): 52.6% recall
+      at 56% fair precision, conf 0.01. The model finds these objects and ranks them
+      badly — a calibration problem, which is what supervised training fixes.
+- [ ] **Fine-tune on WaRP** using [the Colab notebook](notebooks/train_colab.ipynb).
+      Success is recall holding above 50% at conf 0.25, not a higher peak.
+- [ ] ~~Import SortWaste~~ (unobtainable; WaRP used instead). The first honest number this
       project will have: everything scored so far rests on 2 clean photos, and the
       vocabulary was tuned while looking at them. See [docs/DATA_PLAN.md](docs/DATA_PLAN.md).
 - [x] External-dataset import with class translation (`mappings/*.yaml`), refusing

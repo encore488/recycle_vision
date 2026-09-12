@@ -368,9 +368,15 @@ mapping is complete.
 `zeroshot_eval.py` scores a vocabulary against labelled ground truth, which is
 what makes prompt tuning measurable rather than guesswork.
 
+**No NVIDIA GPU?** `--device auto` is the default and picks CUDA, then Apple
+Silicon's `mps`, then CPU. For a free hosted T4 see
+[docs/TRAINING_ON_GPU.md](docs/TRAINING_ON_GPU.md) and the ready-to-run
+[Colab notebook](notebooks/train_colab.ipynb).
+
 ### Docs
 
 - **[docs/DATA_PLAN.md](docs/DATA_PLAN.md)** — what to train on and in what order
+- **[docs/TRAINING_ON_GPU.md](docs/TRAINING_ON_GPU.md)** — Colab and Kaggle walkthroughs
 - **[docs/LABELLING.md](docs/LABELLING.md)** — how many frames, how long, what to correct
 - **[docs/DATA_CARD.md](docs/DATA_CARD.md)** — template, fill in as you go
 

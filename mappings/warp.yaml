@@ -1,0 +1,74 @@
+# WaRP (Warp-D) -> RecycleVision vocabulary (waste_v2)
+#
+# Reconstructed from the repo owner's own import run, to get it under version
+# control and available to a hosted training environment. It reproduces the
+# reported instance counts exactly:
+#
+#   plastic bottle 8285 · paper cup 812 · metal can 660 · glass bottle 534
+#   cardboard box 83
+#
+# If your local copy differs, yours wins — `import_dataset.py` lists every
+# class it finds and refuses on any it has no rule for, so a mismatch is loud
+# rather than silent.
+#
+# WaRP is unusually good for this project: its 28 classes are ITEM-level, which
+# is the granularity the routing layer needs, where most public waste datasets
+# only label materials. The catch is that its items are all containers.
+
+name: WaRP (Warp-D)
+source: https://www.kaggle.com/datasets/parohod/warp-waste-recycling-plant-dataset
+description: >-
+  Industrial sorting plant, 1920x1080, 28 item-level classes. Sparse
+  annotation: ~1.7 labelled objects per image in frames holding dozens.
+
+mapping:
+  # --- plastic bottles ----------------------------------------------------
+  # WaRP separates bottles by colour and by whether they are still inflated
+  # (`-full`). Neither distinction changes a bin, so both collapse here —
+  # the same reasoning that merged aluminium and steel in waste_v2.
+  bottle-blue: plastic bottle
+  bottle-green: plastic bottle
+  bottle-dark: plastic bottle
+  bottle-milk: plastic bottle
+  bottle-transp: plastic bottle
+  bottle-multicolor: plastic bottle
+  bottle-yogurt: plastic bottle
+  bottle-oil: plastic bottle
+  bottle-blue-full: plastic bottle
+  bottle-transp-full: plastic bottle
+  bottle-dark-full: plastic bottle
+  bottle-green-full: plastic bottle
+  bottle-multicolorv-full: plastic bottle
+  bottle-milk-full: plastic bottle
+  bottle-oil-full: plastic bottle
+  bottle-blue5l: plastic bottle
+  bottle-blue5l-full: plastic bottle
+
+  # --- other rigid plastic ------------------------------------------------
+  detergent-color: plastic bottle
+  detergent-transparent: plastic bottle
+  detergent-white: plastic bottle
+  canister: plastic bottle
+
+  # --- metal --------------------------------------------------------------
+  cans: metal can
+
+  # --- glass --------------------------------------------------------------
+  # All three are bottle-shaped container glass. WaRP has no tableware class,
+  # so the drinking-glass-to-landfill case cannot appear here at all.
+  glass-transp: glass bottle
+  glass-dark: glass bottle
+  glass-green: glass bottle
+
+  # --- fibre --------------------------------------------------------------
+  juice-cardboard: paper cup
+  milk-cardboard: paper cup
+  detergent-box: cardboard box
+
+cannot_express:
+  - glass jar vs glass bottle — WaRP's glass classes are bottle-shaped only
+  - drinking glass / tableware — no class exists, so nothing routes to landfill via this path
+  - plastic tub, plastic cup, plastic bag, plastic wrapper — no film or tub/cup classes in Warp-D
+  - metal bottle cap — caps are not labelled separately
+  - sheet of paper, newspaper — no plain-paper class, only cardboard containers
+  - anything organic — no organics class

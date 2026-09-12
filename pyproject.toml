@@ -14,6 +14,9 @@ addopts = "-q --strict-markers"
 
 [tool.ruff]
 line-length = 100
+# Notebooks are for Colab, where `!pip` and `%cd` are the point. They are not
+# Python and linting them as Python only produces noise.
+extend-exclude = ["notebooks"]
 target-version = "py39"
 
 [tool.ruff.lint]
