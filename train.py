@@ -22,7 +22,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-DEFAULT_MODEL = "yolo11s-seg.pt"
+from recyclevision.external import BOXES, EMPTY, MIXED, POLYGONS  # noqa: E402
+
+#: Starting weights, per dataset geometry. A segmentation model cannot train
+#: on a boxes-only dataset, so the dataset picks the model rather than the
+#: other way round -- see `choose_model`.
+DETECT_MODEL = "yolo11s.pt"
+SEGMENT_MODEL = "yolo11s-seg.pt"
 
 
 def resolve_device(requested: str | None) -> str:
@@ -56,10 +62,58 @@ def resolve_device(requested: str | None) -> str:
     return "cpu"
 
 
+def describe_geometry(data: Path) -> tuple[str, Path | None]:
+    """What the dataset's training labels actually contain."""
+    from recyclevision.external import inspect_label_geometry, label_dir_for, read_split_images_dir
+
+    images = read_split_images_dir(data, "train")
+    if images is None:
+        return EMPTY, None
+    labels = label_dir_for(images)
+    return inspect_label_geometry(labels), labels
+
+
+def choose_model(requested: str | None, geometry: str, data: Path) -> str:
+    """Match the starting weights to the dataset, or explain why they cannot be.
+
+    Ultralytics discovers this mismatch itself, but only after caching every
+    label in the dataset -- minutes into a run that could never have started.
+    Worse, it phrases the fix as "supply a segment dataset", which points at
+    the data when the model is the thing that should change.
+    """
+    if geometry == MIXED:
+        raise SystemExit(
+            f"{data} mixes polygon and box labels, which ultralytics will not train on.\n"
+            "Every label file has to be one or the other. Re-run the import or the\n"
+            "pre-labelling step with --boxes-only to make them all boxes."
+        )
+
+    if requested is None:
+        return SEGMENT_MODEL if geometry == POLYGONS else DETECT_MODEL
+
+    wants_masks = "-seg" in Path(requested).stem
+    if wants_masks and geometry == BOXES:
+        raise SystemExit(
+            f"{data} is labelled with bounding boxes, and {requested} is a segmentation\n"
+            f"model — it has nothing to learn masks from.\n\n"
+            f"Drop --model and train.py picks {DETECT_MODEL}, which fits this dataset.\n\n"
+            "Boxes lose nothing for routing: a bin decision needs to know what an item\n"
+            "is and where it is, and a box says both. Masks earn their keep on\n"
+            "pre-labelling and on items that overlap on a belt — which is what your own\n"
+            "footage is for."
+        )
+    return requested
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=Path("datasets/conveyor/data.yaml"))
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="starting weights")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=f"starting weights; by default {SEGMENT_MODEL} for a dataset with "
+        f"polygons and {DETECT_MODEL} for one with boxes",
+    )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument(
         "--imgsz",
@@ -92,19 +146,31 @@ def main(argv: list[str] | None = None) -> int:
             "...then correct the labels before training on them."
         )
 
+    geometry, labels_dir = describe_geometry(args.data)
+    if geometry == EMPTY:
+        parser.error(
+            f"found no label files for the train split of {args.data}"
+            + (f" (looked in {labels_dir})" if labels_dir else "")
+            + ".\nA dataset with no labels teaches the model that every image is empty."
+        )
+    model_name = choose_model(args.model, geometry, args.data)
+
     from ultralytics import YOLO
 
     device = resolve_device(args.device)
     name = args.name or f"conveyor_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}"
 
-    print(f"fine-tuning {args.model} on {args.data}")
+    print(f"fine-tuning {model_name} on {args.data}")
+    task = "segmentation" if geometry == POLYGONS else "detection"
+    chosen = "--model given" if args.model else f"a {task} model, to match"
+    print(f"  labels are {geometry} — {chosen}")
     print(f"  epochs {args.epochs} · imgsz {args.imgsz} · batch {args.batch} · device {device}")
     if device == "cpu":
         print("  CPU only — this will take many hours. See docs/TRAINING_ON_GPU.md")
     elif device == "mps":
         print("  Apple Silicon GPU. Much faster than CPU, still slower than a hosted T4.")
 
-    model = YOLO(args.model)
+    model = YOLO(model_name)
     results = model.train(
         data=str(args.data),
         epochs=args.epochs,
@@ -123,7 +189,8 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(
             {
                 "data": str(args.data),
-                "model": args.model,
+                "model": model_name,
+                "label_geometry": geometry,
                 "epochs": args.epochs,
                 "imgsz": args.imgsz,
                 "batch": args.batch,

@@ -78,11 +78,9 @@ def main(argv: list[str] | None = None) -> int:
     class_index = {name: i for i, name in enumerate(vocabulary.classes)}
 
     if args.weights:
-        from recyclevision.detector import TrainedSegmentationDetector
+        from recyclevision.detector import TrainedDetector
 
-        detector = TrainedSegmentationDetector(
-            args.weights, **({"imgsz": args.imgsz} if args.imgsz else {})
-        )
+        detector = TrainedDetector(args.weights, **({"imgsz": args.imgsz} if args.imgsz else {}))
         unknown = [n for n in detector.class_names if n not in class_index]
         if unknown:
             parser.error(

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import yaml
 
+from recyclevision import external
 from recyclevision.external import (
     ClassMapping,
     MappingError,
@@ -133,3 +136,80 @@ class TestRemapping:
         assert remap_label_line("", {0: 0}) is None
         assert remap_label_line("0 0.5", {0: 0}) is None
         assert remap_label_line("notanumber 0.5 0.5 0.2 0.2", {0: 0}) is None
+
+
+# --- dataset geometry -------------------------------------------------------
+#
+# Ultralytics refuses to train a segmentation model on a boxes-only dataset,
+# but only after caching every label -- minutes into a run that was never
+# going to start. These cover recognising that up front.
+
+
+def _write_dataset(root: Path, *, train_lines: list[str], split: str = "train") -> Path:
+    (root / "images" / split).mkdir(parents=True, exist_ok=True)
+    labels = root / "labels" / split
+    labels.mkdir(parents=True, exist_ok=True)
+    for i, line in enumerate(train_lines):
+        (labels / f"frame_{i:03d}.txt").write_text(line + "\n", encoding="utf-8")
+    data = root / "data.yaml"
+    data.write_text(
+        f"path: .\n{split}: images/{split}\nnames:\n  0: MixedRecycling\n", encoding="utf-8"
+    )
+    return data
+
+
+def test_box_labels_read_as_boxes(tmp_path):
+    _write_dataset(tmp_path, train_lines=["0 0.5 0.5 0.2 0.3"])
+    assert external.inspect_label_geometry(tmp_path / "labels" / "train") == external.BOXES
+
+
+def test_polygon_labels_read_as_polygons(tmp_path):
+    _write_dataset(tmp_path, train_lines=["0 0.1 0.1 0.4 0.1 0.4 0.4 0.1 0.4"])
+    assert external.inspect_label_geometry(tmp_path / "labels" / "train") == external.POLYGONS
+
+
+def test_a_dataset_holding_both_is_mixed(tmp_path):
+    _write_dataset(
+        tmp_path,
+        train_lines=["0 0.5 0.5 0.2 0.3", "0 0.1 0.1 0.4 0.1 0.4 0.4 0.1 0.4"],
+    )
+    assert external.inspect_label_geometry(tmp_path / "labels" / "train") == external.MIXED
+
+
+def test_empty_label_files_are_not_mistaken_for_boxes(tmp_path):
+    # An empty .txt means "this image contains nothing", which is a real
+    # training signal -- but a directory of only these has no geometry at all.
+    _write_dataset(tmp_path, train_lines=[""])
+    assert external.inspect_label_geometry(tmp_path / "labels" / "train") == external.EMPTY
+
+
+def test_a_missing_label_directory_is_empty_not_an_error(tmp_path):
+    assert external.inspect_label_geometry(tmp_path / "nowhere") == external.EMPTY
+
+
+def test_label_dir_swaps_the_last_images_segment(tmp_path):
+    # "images" appearing twice is the case that catches a naive replace().
+    found = external.label_dir_for(Path("datasets/images/warp/images/train"))
+    assert found == Path("datasets/images/warp/labels/train")
+
+
+def test_label_dir_leaves_an_unconventional_layout_alone(tmp_path):
+    # Better to find no labels and say so than to invent a path.
+    assert external.label_dir_for(Path("datasets/warp/frames")) == Path("datasets/warp/frames")
+
+
+def test_split_images_dir_resolves_against_the_descriptor(tmp_path):
+    data = _write_dataset(tmp_path, train_lines=["0 0.5 0.5 0.2 0.3"])
+    assert external.read_split_images_dir(data, "train") == (tmp_path / "images" / "train")
+
+
+def test_split_images_dir_is_none_for_a_split_not_declared(tmp_path):
+    data = _write_dataset(tmp_path, train_lines=["0 0.5 0.5 0.2 0.3"])
+    assert external.read_split_images_dir(data, "val") is None
+
+
+def test_split_images_dir_accepts_a_list_of_paths(tmp_path):
+    # Ultralytics allows several directories per split.
+    data = tmp_path / "data.yaml"
+    data.write_text("path: .\ntrain:\n  - images/a\n  - images/b\nnames: [x]\n", encoding="utf-8")
+    assert external.read_split_images_dir(data, "train") == (tmp_path / "images" / "a")

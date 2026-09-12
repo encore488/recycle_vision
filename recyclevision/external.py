@@ -146,3 +146,92 @@ def remap_label_line(line: str, index_map: dict[int, int | None]) -> str | None:
     if target is None:
         return None
     return " ".join([str(target)] + parts[1:])
+
+
+#: A YOLO label file holds one of these. Ultralytics will not train a
+#: segmentation model on `BOXES`, and says so only after scanning the whole
+#: dataset -- several minutes into a run that was never going to start.
+BOXES = "boxes"
+POLYGONS = "polygons"
+MIXED = "mixed"
+EMPTY = "empty"
+
+
+def read_split_images_dir(path: str | Path, split: str = "train") -> Path | None:
+    """Where one split's images live, per a dataset descriptor.
+
+    Returns None when the descriptor does not name that split, rather than
+    guessing a conventional location that may not exist.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise MappingError(f"no dataset descriptor at {path}")
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise MappingError(f"{path} is not a dataset descriptor")
+
+    entry = raw.get(split)
+    if isinstance(entry, list):
+        entry = entry[0] if entry else None
+    if not isinstance(entry, str):
+        return None
+
+    root = Path(raw.get("path", path.parent))
+    if not root.is_absolute():
+        root = (path.parent / root).resolve()
+    candidate = Path(entry)
+    return candidate if candidate.is_absolute() else (root / candidate).resolve()
+
+
+def label_dir_for(images_dir: Path) -> Path:
+    """The labels directory ultralytics pairs with an images directory.
+
+    Mirrors ultralytics' own rule -- swap the last `images` path segment for
+    `labels` -- because inventing a different one here would report a healthy
+    dataset as empty, or an empty one as healthy.
+    """
+    parts = list(images_dir.parts)
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == "images":
+            parts[i] = "labels"
+            return Path(*parts)
+    return images_dir
+
+
+def inspect_label_geometry(labels_dir: Path, sample: int = 300) -> str:
+    """Whether a label directory holds boxes, polygons, both, or nothing.
+
+    A detection line is `cls cx cy w h`: five fields. A segmentation line is
+    `cls x1 y1 x2 y2 ...`: an odd count of at least seven, being a class plus
+    three or more points.
+
+    Sampled rather than read whole, and strided rather than taken from the
+    front -- a sorted listing's first few hundred files are often one scene,
+    which would miss a dataset that is only partly polygons.
+    """
+    files = sorted(labels_dir.rglob("*.txt")) if labels_dir.is_dir() else []
+    if not files:
+        return EMPTY
+
+    step = max(1, len(files) // sample)
+    has_boxes = has_polygons = False
+    for path in files[::step][:sample]:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            count = len(line.split())
+            if count == 5:
+                has_boxes = True
+            elif count >= 7 and count % 2 == 1:
+                has_polygons = True
+        if has_boxes and has_polygons:
+            return MIXED
+
+    if has_polygons:
+        return POLYGONS
+    if has_boxes:
+        return BOXES
+    return EMPTY

@@ -117,3 +117,11 @@ class TestDetectorInterface:
 
     def test_unroutable_classes_is_empty_when_detector_lists_none(self, policy):
         assert SortingPipeline(StubDetector(), policy).unroutable_classes() == []
+
+
+def test_the_old_trained_detector_name_still_resolves():
+    # Renamed when train.py started producing detection weights; an existing
+    # script or notebook importing the old name should not break.
+    from recyclevision.detector import TrainedDetector, TrainedSegmentationDetector
+
+    assert TrainedSegmentationDetector is TrainedDetector

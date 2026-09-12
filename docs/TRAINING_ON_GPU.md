@@ -22,6 +22,29 @@ hours rather than one. If it is slow or unstable (ultralytics' MPS support is
 good but not flawless), move to Colab. Try local first: it costs one command
 and no upload.
 
+## The dataset picks the model, not you
+
+WaRP ships **bounding boxes, not polygons**, and a `-seg` model has nothing to
+learn masks from. Ultralytics does notice — but only after caching all 2,452
+labels, several minutes into a run that was never going to start, and it
+phrases the fix as "supply a segment dataset", which blames the data rather
+than the model.
+
+`train.py` now reads the label geometry first and picks `yolo11s.pt` for boxes,
+`yolo11s-seg.pt` for polygons. Leave `--model` alone and it is right by
+construction; pass a `-seg` model against boxes and it says so in a tenth of a
+second.
+
+Boxes cost you nothing here. Routing needs to know **what** an item is and
+**where** it is, and a box says both. Masks earn their keep on two things —
+pre-labelling, and picking a grasp point on an item that overlaps another — and
+both of those are about your own footage, which `scripts/prelabel.py` outlines
+for free.
+
+One consequence: a detection run lands in `runs/detect/`, not `runs/segment/`.
+`train.py` prints the real path when it finishes, so copy it from there rather
+than from memory.
+
 ---
 
 ## Colab (recommended)

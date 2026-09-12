@@ -62,6 +62,14 @@ count a stream; masks are what a gripper needs.
 So the human job is: **check the class, fix the box, delete what is not real,
 draw the few that were missed.** Masks follow automatically.
 
+**One thing to know about the run directory.** `train.py` reads your labels
+before it starts and picks a model to match: `yolo11s-seg.pt` when they are
+polygons, `yolo11s.pt` when they are boxes. Ultralytics then writes to
+`runs/segment/` or `runs/detect/` accordingly. `prelabel.py` outputs polygons
+unless you pass `--boxes-only`, so the paths below say `segment` — but read the
+path `train.py` prints rather than assuming it. An outside dataset of boxes
+(WaRP, say) trains a detection model and lands in `runs/detect/`.
+
 ---
 
 ## How many frames?

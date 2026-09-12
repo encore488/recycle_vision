@@ -197,13 +197,18 @@ class OpenVocabularyDetector:
         return [(detections[i], outlines[i]) for i in range(len(detections))]
 
 
-class TrainedSegmentationDetector:
+class TrainedDetector:
     """A model trained by `train.py`, behind the same interface.
 
     Exists so the labelling loop can bootstrap itself: label a batch by hand,
     train on it, then pre-label the next batch with the result. Each round the
     pre-labels get closer and the correcting gets faster, which is the whole
     reason to label in batches rather than all at once.
+
+    Takes detection *or* segmentation weights, because `train.py` picks one to
+    match the labels it was given -- an outside dataset of boxes trains a
+    detection model. `detect_with_masks` answers with `None` outlines in that
+    case, which `prelabel.py` already handles by writing box labels.
     """
 
     def __init__(
@@ -250,6 +255,12 @@ class TrainedSegmentationDetector:
         # Indexed rather than zipped: `zip(strict=)` is Python 3.10+, and the
         # length check above already does what it would.
         return [(detections[i], outlines[i]) for i in range(len(detections))]
+
+
+#: Former name, kept so an existing script or notebook does not break. The
+#: class was never segmentation-only; `train.py` producing detection weights
+#: made the name actively misleading.
+TrainedSegmentationDetector = TrainedDetector
 
 
 class StubDetector:
