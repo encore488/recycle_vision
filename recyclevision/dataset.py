@@ -152,8 +152,38 @@ def write_data_yaml(root: Path, classes: list[str]) -> Path:
     return path
 
 
-def prepare_tree(root: Path) -> None:
-    """Create the images/ and labels/ layout ultralytics expects."""
+def clear_label_caches(root: Path) -> list[Path]:
+    """Delete ultralytics' parsed-label caches under a dataset root.
+
+    Ultralytics keys `labels/<split>.cache` on the total byte size of the
+    label files plus their paths -- not on their contents. Re-importing a
+    dataset after a vocabulary change rewrites class indices in place, and
+    when the new index has the same number of digits as the old one (14 ->
+    15, say) the total size is unchanged, the key matches, and the stale
+    cache is reused. The run then trains on the previous class indices and
+    reports nothing wrong, which is the worst way for this to fail.
+
+    Verified against ultralytics 8.4: a label edited from `14 ...` to
+    `15 ...` reads back as 14 until the cache is removed.
+
+    So anything that writes labels clears these. Returns what it deleted, for
+    the caller to report -- a silent deletion is its own small surprise.
+    """
+    removed = []
+    for cache in sorted(root.rglob("*.cache")):
+        cache.unlink()
+        removed.append(cache)
+    return removed
+
+
+def prepare_tree(root: Path) -> list[Path]:
+    """Create the images/ and labels/ layout ultralytics expects.
+
+    Also clears any parsed-label cache left by an earlier run over this tree,
+    since the labels about to be written would otherwise be ignored in favour
+    of it. Returns the caches removed.
+    """
     for kind in ("images", "labels"):
         for split in ("train", "val"):
             (root / kind / split).mkdir(parents=True, exist_ok=True)
+    return clear_label_caches(root)

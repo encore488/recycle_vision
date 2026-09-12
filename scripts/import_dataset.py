@@ -1,6 +1,6 @@
 """Import an external YOLO dataset into this project's vocabulary.
 
-    python scripts/import_dataset.py <external>/data.yaml \
+    python scripts/import_dataset.py path/to/external/data.yaml \
         --mapping mappings/sortwaste.yaml --out datasets/sortwaste
 
 Public waste datasets label materials; this project routes bins from items.
@@ -85,7 +85,10 @@ def main(argv: list[str] | None = None) -> int:
         for item in mapping.cannot_express:
             print(f"  - {item}")
 
-    prepare_tree(args.out)
+    stale = prepare_tree(args.out)
+    for cache in stale:
+        # Ultralytics would otherwise reuse this and ignore what we write.
+        print(f"  removed stale label cache: {cache}")
     counts: Counter[str] = Counter()
     copied = unlabelled = 0
 

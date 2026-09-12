@@ -96,7 +96,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"pre-labelling with the stock open vocabulary ({vocabulary.name})")
 
-    prepare_tree(args.out)
+    stale = prepare_tree(args.out)
+    for cache in stale:
+        # Ultralytics would otherwise reuse this and ignore what we write.
+        print(f"  removed stale label cache: {cache}")
     train_idx, val_idx = block_split(len(frames), args.val_fraction)
     split_of = dict.fromkeys(train_idx, "train") | dict.fromkeys(val_idx, "val")
 

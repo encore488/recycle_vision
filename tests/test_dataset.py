@@ -127,3 +127,47 @@ class TestStats:
 
     def test_instances_per_image_survives_an_empty_dataset(self):
         assert DatasetStats().instances_per_image == 0.0
+
+
+class TestLabelCaches:
+    """Ultralytics caches parsed labels and keys the cache on total byte size
+    plus file paths -- never on contents.
+
+    Re-importing after a vocabulary change rewrites class indices in place. If
+    the new index has as many digits as the old one, the total size is
+    unchanged, the key still matches, and the run silently trains on the
+    previous labels. That is exactly what `paper cup` 14 -> `beverage carton`
+    15 does, and it reports nothing wrong.
+    """
+
+    def test_preparing_a_tree_clears_a_stale_cache(self, tmp_path):
+        labels = tmp_path / "labels"
+        labels.mkdir()
+        cache = labels / "train.cache"
+        cache.write_bytes(b"stale")
+
+        removed = prepare_tree(tmp_path)
+
+        assert not cache.exists()
+        assert removed == [cache]
+
+    def test_nested_caches_are_found_too(self, tmp_path):
+        deep = tmp_path / "labels" / "train"
+        deep.mkdir(parents=True)
+        (deep / "sub.cache").write_bytes(b"stale")
+
+        assert len(prepare_tree(tmp_path)) == 1
+
+    def test_a_clean_tree_reports_nothing_removed(self, tmp_path):
+        assert prepare_tree(tmp_path) == []
+
+    def test_labels_themselves_survive(self, tmp_path):
+        labels = tmp_path / "labels" / "train"
+        labels.mkdir(parents=True)
+        kept = labels / "frame.txt"
+        kept.write_text("15 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+        (labels.parent / "train.cache").write_bytes(b"stale")
+
+        prepare_tree(tmp_path)
+
+        assert kept.read_text(encoding="utf-8") == "15 0.5 0.5 0.2 0.2\n"

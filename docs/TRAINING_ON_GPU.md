@@ -56,12 +56,29 @@ class and both policies route it, so the mapping is fixed, but **the class
 indices changed**. A dataset imported before that is wrong on disk:
 
 ```bash
-python scripts/import_dataset.py <warp>/data.yaml \
+python scripts/import_dataset.py path/to/Warp-D-yolo/data.yaml \
     --mapping mappings/warp.yaml --out datasets/warp
+```
+
+Not sure where the original download went:
+
+```bash
+find ~ -name data.yaml -path '*arp*' 2>/dev/null
 ```
 
 Expect `beverage carton 812` where it used to say `paper cup 812`. Minutes of
 work, ahead of hours of training — and the notebook does it for you.
+
+**Why a plain re-import is not enough on its own.** Ultralytics caches parsed
+labels in `labels/<split>.cache`, keyed on the total byte size of the label
+files plus their paths — never on their contents. `paper cup` was index 14 and
+`beverage carton` is 15, so every rewritten line keeps its length, the total
+size is identical, the key still matches, and the stale cache wins. The run
+then trains on the old indices and reports nothing wrong.
+
+`prepare_tree` now deletes those caches, so `import_dataset.py` and
+`prelabel.py` both clear them and say so. Nothing to remember — but if you ever
+hand-edit labels, delete `datasets/*/labels/*.cache` yourself.
 
 ---
 

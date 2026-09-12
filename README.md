@@ -357,7 +357,7 @@ Public waste datasets label *materials*; this project routes *bins* from
 translation cannot express:
 
 ```bash
-python scripts/import_dataset.py <external>/data.yaml     --mapping mappings/sortwaste.yaml --out datasets/sortwaste --link
+python scripts/import_dataset.py path/to/external/data.yaml     --mapping mappings/sortwaste.yaml --out datasets/sortwaste --link
 python scripts/zeroshot_eval.py --data datasets/sortwaste/data.yaml
 ```
 
