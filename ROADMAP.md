@@ -222,8 +222,14 @@ pictures were "badly mislabeled" — and they were. Routing accuracy forgives an
 mislabel that lands in the right bin, so v1's 92% concealed a 38% mislabel rate.
 Reporting the two separately is the only honest way to show it.
 
-**These are fitted numbers, not predictions.** The v2 vocabulary was tuned against
-these same two images. The first real measurement is the first image it has not seen.
+**These were fitted numbers, not predictions** — the v2 vocabulary was tuned against
+these same two images, and both were household items photographed on a carpet.
+
+**Superseded.** The first real measurement arrived with WaRP below: 522 held-out
+images from an actual sorting plant, scored by a model that had never seen them.
+Keep these rows as the record of how the vocabulary was built; do not cite them as
+evidence. A belt model is not usefully judged on a living-room floor, and the
+sample images are being replaced with MRF imagery for the same reason.
 
 Still zero-shot: it has never seen a labelled conveyor belt. Milestone 4 is unchanged,
 but its baseline is now much higher and its argument is different — training has to beat

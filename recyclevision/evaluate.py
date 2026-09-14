@@ -284,3 +284,24 @@ def per_class_counts(
         )
         for name in set(truth_count) | set(fires_count)
     }
+
+
+def destinations_reachable(labels: set[str], policy: RoutingPolicy) -> dict[str, str]:
+    """Where each label lands under a policy, for labels that route anywhere.
+
+    Routing accuracy only means something when the classes under test can
+    reach more than one destination. Score WaRP's five container classes
+    against a household policy and every one of them is "Mixed Recycling", so
+    routing accuracy is 100% before the model has done anything -- a number
+    that reads like a triumph and measures nothing.
+
+    The same five classes against the MRF policy split four ways, and the
+    metric becomes real. Which policy you score against is therefore part of
+    the result, not a detail.
+    """
+    found = {}
+    for label in labels:
+        destination = _bin_of(policy, label)
+        if destination is not None:
+            found[label] = destination
+    return found

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from recyclevision.evaluate import per_class_counts, score_routing
+from recyclevision.evaluate import destinations_reachable, per_class_counts, score_routing
 from recyclevision.models import BoundingBox
+from recyclevision.pipeline import DEFAULT_POLICY
+from recyclevision.policy import RoutingPolicy
 
 
 def box(x1, y1, x2, y2) -> BoundingBox:
@@ -243,3 +245,34 @@ class TestPerClassCounts:
         counts = per_class_counts([([("plastic bag", box(0, 0, 10, 10), 0.9)], [])])
         assert counts["plastic bag"].recall == 0.0
         assert counts["plastic bag"].naming_accuracy == 0.0
+
+
+class TestDestinationsReachable:
+    """Routing accuracy is only a measurement when it can fail.
+
+    WaRP's five container classes all route to "Mixed Recycling" under the
+    household policy, so scoring against it returned 100% before the model
+    had been tested at all. The same five split four ways under the MRF
+    policy. Which policy you score against is part of the result.
+    """
+
+    def test_warp_classes_collapse_to_one_bin_at_home(self):
+        policy = RoutingPolicy.load(DEFAULT_POLICY)
+        warp = {"plastic bottle", "beverage carton", "metal can", "glass bottle", "cardboard box"}
+        assert len(set(destinations_reachable(warp, policy).values())) == 1
+
+    def test_the_same_classes_separate_on_a_sorting_line(self):
+        policy = RoutingPolicy.load(DEFAULT_POLICY.parent / "mrf_conveyor.yaml")
+        warp = {"plastic bottle", "beverage carton", "metal can", "glass bottle", "cardboard box"}
+        assert len(set(destinations_reachable(warp, policy).values())) > 1
+
+    def test_a_class_the_policy_ignores_is_omitted(self):
+        # `default: ignore` means non-waste, which has no destination at all
+        # and must not be counted as one.
+        policy = RoutingPolicy.load(DEFAULT_POLICY)
+        found = destinations_reachable({"plastic bottle", "not a real class at all"}, policy)
+        assert "plastic bottle" in found
+        assert len(found) <= 2
+
+    def test_no_labels_means_no_destinations(self):
+        assert destinations_reachable(set(), RoutingPolicy.load(DEFAULT_POLICY)) == {}

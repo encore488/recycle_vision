@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from recyclevision.evaluate import score_routing  # noqa: E402
+from recyclevision.evaluate import destinations_reachable, score_routing  # noqa: E402
 from recyclevision.pipeline import DEFAULT_POLICY  # noqa: E402
 from recyclevision.policy import RoutingPolicy  # noqa: E402
 
@@ -70,8 +70,30 @@ def main(argv: list[str] | None = None) -> int:
         print("\nno matched instances — nothing to score for routing")
         return 0
 
-    print("\nrouting metrics")
-    print(score_routing(pairs, RoutingPolicy.load(args.policy)).report())
+    policy = RoutingPolicy.load(args.policy)
+    print(f"\nrouting metrics ({policy.name})")
+    print(score_routing(pairs, policy).report())
+
+    # Routing accuracy is only a measurement when the classes under test can
+    # reach more than one bin. They frequently cannot: an external dataset is
+    # usually one material family, and a household policy sends the whole
+    # family to one place. The metric then reads 100% without the model having
+    # been tested at all, which is worse than not reporting it.
+    involved = {label for pair in pairs for label in pair}
+    reachable = destinations_reachable(involved, policy)
+    if len(set(reachable.values())) <= 1:
+        only = next(iter(reachable.values()), "one bin")
+        print(
+            f"\n  ⚠️ every class here routes to {only!r} under {policy.name}, so routing\n"
+            "     accuracy cannot fail and this 100% measures nothing. Score against a\n"
+            "     policy that separates them before quoting it:\n"
+            "       --policy policies/mrf_conveyor.yaml"
+        )
+    else:
+        print(
+            f"\n  {len(set(reachable.values()))} destinations in play across "
+            f"{len(reachable)} class(es), so this number can fail."
+        )
     return 0
 
 

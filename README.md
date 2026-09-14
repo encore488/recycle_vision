@@ -136,11 +136,11 @@ than scoring for the material it happens to contain.
 For scripting, or just to check it works without a browser:
 
 ```bash
-python -m recyclevision images/recycl_test.jpg
+python -m recyclevision images/<a sample>.jpg
 python -m recyclevision images/*.jpg --impact        # batch totals + estimates
 python -m recyclevision images/*.jpg --csv > out.csv
 python -m recyclevision images/*.jpg --json
-python -m recyclevision images/recycl_test.jpg --save-annotated out/
+python -m recyclevision images/<a sample>.jpg --save-annotated out/
 ```
 
 ```
