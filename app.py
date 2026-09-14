@@ -18,6 +18,7 @@ from recyclevision.policy import PolicyError
 from recyclevision.report import detection_rows, result_payload, to_csv, to_json
 from recyclevision.session import Session
 from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary
+from recyclevision.weights import CUSTOM_WEIGHTS, STOCK_WEIGHTS, WeightsChoice
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_DIR = PROJECT_ROOT / "images"
@@ -25,6 +26,9 @@ POLICY_DIR = PROJECT_ROOT / "policies"
 
 #: Sentinel for the closed-set COCO detector, kept as the measured baseline.
 COCO = "coco"
+
+#: Sentinel for a model produced by train.py, offered only when one exists.
+TRAINED = "trained"
 
 st.set_page_config(page_title="RecycleVision AI", page_icon="♻️", layout="wide")
 
@@ -37,11 +41,21 @@ st.set_page_config(page_title="RecycleVision AI", page_icon="♻️", layout="wi
 @st.cache_resource(show_spinner="Loading model…")
 def load_detector(kind: str):
     """Loaded once per detector. Swapping policy must not re-pay for a model."""
-    from recyclevision.detector import OpenVocabularyDetector, YoloDetector
+    from recyclevision.detector import (
+        OpenVocabularyDetector,
+        TrainedDetector,
+        YoloDetector,
+    )
     from recyclevision.vocabulary import Vocabulary
 
     if kind == COCO:
-        return YoloDetector()
+        # Pinned to stock, never resolved. `resolve_weights()` prefers
+        # models/best_model.pt when it exists, which would silently turn the
+        # option labelled "Stock COCO (baseline)" into the trained model and
+        # destroy the one comparison this entry exists to provide.
+        return YoloDetector(WeightsChoice(path=STOCK_WEIGHTS, is_custom=False))
+    if kind == TRAINED:
+        return TrainedDetector(CUSTOM_WEIGHTS)
     return OpenVocabularyDetector(Vocabulary.load(kind))
 
 
@@ -104,6 +118,8 @@ detector_options: list[tuple[str, str]] = [
     (str(path), f"Open vocabulary · {Vocabulary.load(path).name}")
     for path in sorted(vocabulary.discover(), key=_vocabulary_order)
 ]
+if CUSTOM_WEIGHTS.is_file():
+    detector_options.insert(0, (TRAINED, f"Trained · {CUSTOM_WEIGHTS.stem}"))
 detector_options.append((COCO, "Stock COCO (baseline)"))
 detector_labels = dict(detector_options)
 

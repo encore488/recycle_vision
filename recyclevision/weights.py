@@ -35,6 +35,9 @@ class WeightsChoice:
     #: Overrides the derived name. Set by detectors that know better -- an
     #: open-vocabulary model is identified by its vocabulary, not its file.
     display_name_override: str = ""
+    #: Overrides the derived caveat. A fine-tuned model is not stock, but it
+    #: is not unconditionally trustworthy either -- see `caveat`.
+    caveat_override: str = ""
 
     @property
     def display_name(self) -> str:
@@ -55,6 +58,8 @@ class WeightsChoice:
         the case for training a purpose-built model, and why this caveat is
         shown rather than buried.
         """
+        if self.caveat_override:
+            return self.caveat_override
         if self.is_custom:
             return ""
         return (

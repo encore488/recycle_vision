@@ -236,7 +236,24 @@ class TrainedDetector:
 
     @property
     def weights(self) -> WeightsChoice:
-        return WeightsChoice(path=str(self.weights_path), is_custom=True)
+        """Custom, and still worth a warning.
+
+        "Not stock COCO" is the good news; it is not the whole story. A model
+        fine-tuned on one facility's imagery can do markedly worse on
+        photographs from anywhere else, and nothing in the file says which
+        facility it was. Silence here would read as a clean bill of health.
+        """
+        return WeightsChoice(
+            path=str(self.weights_path),
+            is_custom=True,
+            caveat_override=(
+                "Fine-tuned weights, not stock COCO — but only as general as "
+                "what they were trained on. A model taught on one facility's "
+                "imagery can do markedly worse on photographs from elsewhere, "
+                "and on classes its training set never contained. See "
+                "docs/DATA_CARD.md for what this one saw."
+            ),
+        )
 
     def detect(self, image, confidence: float = 0.25) -> list[Detection]:
         result = self._model.predict(image, conf=confidence, imgsz=self.imgsz, verbose=False)[0]

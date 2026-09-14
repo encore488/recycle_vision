@@ -236,8 +236,25 @@ Separates "used a model" from "understands ML". Gated on real data.
 - [x] **Measured zero-shot on real conveyor data** (WaRP, 200 val images): 52.6% recall
       at 56% fair precision, conf 0.01. The model finds these objects and ranks them
       badly — a calibration problem, which is what supervised training fixes.
-- [ ] **Fine-tune on WaRP** using [the Colab notebook](notebooks/train_colab.ipynb).
-      Success is recall holding above 50% at conf 0.25, not a higher peak.
+- [x] **Fine-tuned on WaRP.** yolo11s, 960px, 63 epochs (best at 38, early-stopped),
+      18.6h on an M5 `mps`. **mAP50 0.671, mAP50-95 0.502, P 0.768, R 0.567.**
+
+      | class | instances | P | R | mAP50 |
+      | --- | --- | --- | --- | --- |
+      | plastic bottle | 1188 | 0.860 | 0.688 | 0.814 |
+      | glass bottle | 86 | 0.880 | 0.594 | 0.765 |
+      | cardboard box | 17 | 0.975 | 0.529 | 0.735 |
+      | metal can | 98 | 0.633 | 0.510 | 0.568 |
+      | beverage carton | 162 | 0.492 | 0.512 | 0.474 |
+
+      The calibration thesis held: zero-shot managed 0.9% recall at conf 0.25 and
+      needed conf 0.005 to reach 64%. This reaches 56.7% recall at 76.8% precision
+      without a pathological threshold, which was the stated success condition.
+
+      `beverage carton` is the weakest class at 162 instances — not obviously a data
+      shortage, since `cardboard box` scores higher on 17. Worth a confusion matrix
+      before concluding anything: a carton read as cardboard shares a bin and costs
+      nothing, while a carton read as a bottle does not.
 - [ ] ~~Import SortWaste~~ (unobtainable; WaRP used instead). The first honest number this
       project will have: everything scored so far rests on 2 clean photos, and the
       vocabulary was tuned while looking at them. See [docs/DATA_PLAN.md](docs/DATA_PLAN.md).

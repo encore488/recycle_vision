@@ -125,3 +125,65 @@ def test_the_old_trained_detector_name_still_resolves():
     from recyclevision.detector import TrainedDetector, TrainedSegmentationDetector
 
     assert TrainedSegmentationDetector is TrainedDetector
+
+
+class TestWeightsSelection:
+    """Dropping a trained model into models/ must not redefine the baseline.
+
+    `resolve_weights()` prefers models/best_model.pt, and the app's "Stock
+    COCO (baseline)" entry used to call `YoloDetector()` with no argument. A
+    single `cp` into models/ therefore turned the labelled baseline into the
+    trained model, silently, destroying the one comparison it exists for.
+    """
+
+    def test_stock_weights_carry_the_coco_caveat(self):
+        from recyclevision.weights import STOCK_WEIGHTS, WeightsChoice
+
+        choice = WeightsChoice(path=STOCK_WEIGHTS, is_custom=False)
+        assert choice.caveat
+        assert "COCO" in choice.caveat
+
+    def test_a_custom_model_is_silent_by_default(self):
+        from recyclevision.weights import WeightsChoice
+
+        assert WeightsChoice(path="models/best_model.pt", is_custom=True).caveat == ""
+
+    def test_an_overridden_caveat_survives_being_custom(self):
+        # "Not stock COCO" is not a clean bill of health, and a fine-tuned
+        # model needs to be able to say so.
+        from recyclevision.weights import WeightsChoice
+
+        choice = WeightsChoice(path="x.pt", is_custom=True, caveat_override="only as general as")
+        assert choice.caveat == "only as general as"
+
+    def test_resolve_prefers_a_custom_model_when_present(self, tmp_path):
+        from recyclevision.weights import resolve_weights
+
+        custom = tmp_path / "best_model.pt"
+        custom.write_bytes(b"not really weights")
+        assert resolve_weights(custom).is_custom
+
+    def test_resolve_falls_back_when_absent(self, tmp_path):
+        from recyclevision.weights import STOCK_WEIGHTS, resolve_weights
+
+        choice = resolve_weights(tmp_path / "absent.pt")
+        assert not choice.is_custom
+        assert choice.path == STOCK_WEIGHTS
+
+    def test_the_app_pins_its_baseline_to_stock(self):
+        # Read rather than imported: app.py is a Streamlit script and running
+        # it here would need a session. The property under test is textual —
+        # the COCO branch must not go through resolve_weights().
+        import ast
+        from pathlib import Path
+
+        source = Path(__file__).resolve().parent.parent / "app.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        loader = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "load_detector"
+        )
+        body = ast.unparse(loader)
+        assert "STOCK_WEIGHTS" in body, "the baseline must name stock weights explicitly"
+        assert "YoloDetector()" not in body, "a bare YoloDetector() resolves to custom weights"
