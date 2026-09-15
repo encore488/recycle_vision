@@ -22,6 +22,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -29,6 +31,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 API = "https://commons.wikimedia.org/w/api.php"
+
+#: Wikimedia asks automated clients to identify themselves and say where to
+#: complain. A generic urllib agent is rate-limited on sight.
+USER_AGENT = "recyclevision-sample-fetcher/1.0 (https://github.com/encore488/recycle_vision)"
+
+#: Pause between downloads. Courtesy, and it is also what keeps a five-file
+#: fetch under the rate limit that stopped the first version mid-run.
+COURTESY_DELAY = 1.0
+
+#: A 429 is a request to wait, not a failure. Doubling from here.
+RETRY_DELAYS = (2.0, 5.0, 15.0)
 
 #: Sorting-line and MRF imagery: belts, mixed streams, the domain the model is
 #: for. Titles rather than URLs, so the licence is resolved live rather than
@@ -85,70 +98,40 @@ def describe(entry: dict) -> dict[str, str]:
     }
 
 
-def fetch_metadata(titles: list[str]) -> dict[str, dict[str, str]]:
-    query = urllib.parse.urlencode(
-        {
-            "action": "query",
-            "titles": "|".join(titles),
-            "prop": "imageinfo",
-            "iiprop": "url|extmetadata",
-            "format": "json",
-        }
-    )
-    request = urllib.request.Request(
-        f"{API}?{query}", headers={"User-Agent": "recyclevision-sample-fetcher/1.0"}
-    )
-    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - fixed host
-        payload = json.load(response)
+def _open(url: str, timeout: int, sleep=time.sleep):
+    """GET a URL, treating 429 and 503 as "wait", not as failure.
 
-    found = {}
-    for entry in payload.get("query", {}).get("pages", {}).values():
-        described = describe(entry)
-        if described["url"]:
-            found[described["title"]] = described
-    return found
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("images"))
-    parser.add_argument("--force", action="store_true", help="re-download existing files")
-    args = parser.parse_args(argv)
-
-    args.out.mkdir(parents=True, exist_ok=True)
-    metadata = fetch_metadata([title for title, _name in WANTED])
-
-    credits, skipped = [], []
-    for title, filename in WANTED:
-        record = metadata.get(title)
-        if record is None:
-            skipped.append(f"{title}: not found on Commons")
-            continue
-        if not is_allowed(record["licence"]):
-            skipped.append(f"{title}: licence {record['licence']!r} is not redistributable")
-            continue
-
-        destination = args.out / filename
-        if destination.exists() and not args.force:
-            print(f"  kept     {filename}")
-        else:
-            request = urllib.request.Request(
-                record["url"], headers={"User-Agent": "recyclevision-sample-fetcher/1.0"}
+    Wikimedia rate-limits by asking politely. Honouring Retry-After costs a
+    few seconds; ignoring it cost a half-finished fetch with two images on
+    disk and no attribution file.
+    """
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    for attempt, delay in enumerate((*RETRY_DELAYS, None)):
+        try:
+            return urllib.request.urlopen(request, timeout=timeout).read()  # noqa: S310
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 503) or delay is None:
+                raise
+            # The server's own number wins over ours when it gives one.
+            wait = delay
+            header = exc.headers.get("Retry-After") if exc.headers else None
+            if header and header.strip().isdigit():
+                wait = max(wait, float(header.strip()))
+            print(
+                f"    rate-limited ({exc.code}), waiting {wait:.0f}s "
+                f"[attempt {attempt + 1}/{len(RETRY_DELAYS) + 1}]"
             )
-            with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
-                destination.write_bytes(response.read())
-            print(f"  fetched  {filename}  ({record['licence']})")
-        credits.append((filename, record))
+            sleep(wait)
+    raise RuntimeError("unreachable")
 
-    if skipped:
-        print("\nskipped:")
-        for line in skipped:
-            print(f"  {line}")
 
-    if not credits:
-        print("\nnothing fetched — leaving images/SOURCES.md alone")
-        return 1
+def write_sources(out: Path, credits: list[tuple[str, dict[str, str]]]) -> Path:
+    """Record where every fetched image came from and under what licence.
 
+    Called even when the run fails partway. An image on disk without its
+    credit line is the exact situation this script exists to prevent, and a
+    crash is no excuse for producing one.
+    """
     lines = [
         "# Sample image sources",
         "",
@@ -166,9 +149,106 @@ def main(argv: list[str] | None = None) -> int:
         lines.append(
             f"| `{filename}` | [Commons]({page}) | {record['licence']} | {record['author']} |"
         )
-    (args.out / "SOURCES.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"\nwrote {args.out / 'SOURCES.md'} with {len(credits)} credit(s)")
-    return 0
+    path = out / "SOURCES.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def fetch_metadata(titles: list[str]) -> dict[str, dict[str, str]]:
+    query = urllib.parse.urlencode(
+        {
+            "action": "query",
+            "titles": "|".join(titles),
+            "prop": "imageinfo",
+            "iiprop": "url|extmetadata",
+            "format": "json",
+        }
+    )
+    payload = json.loads(_open(f"{API}?{query}", timeout=60))
+
+    found = {}
+    for entry in payload.get("query", {}).get("pages", {}).values():
+        described = describe(entry)
+        if described["url"]:
+            found[described["title"]] = described
+    return found
+
+
+def download_all(
+    wanted: list[tuple[str, str]],
+    metadata: dict[str, dict[str, str]],
+    out: Path,
+    force: bool = False,
+    sleep=time.sleep,
+) -> tuple[list[tuple[str, dict[str, str]]], list[str]]:
+    """Fetch each wanted file, returning what succeeded and what did not.
+
+    One file failing does not abandon the rest, and never discards the credits
+    for files already on disk -- the caller writes SOURCES.md from what comes
+    back either way.
+    """
+    credits: list[tuple[str, dict[str, str]]] = []
+    problems: list[str] = []
+
+    for index, (title, filename) in enumerate(wanted):
+        record = metadata.get(title)
+        if record is None:
+            problems.append(f"{title}: not found on Commons")
+            continue
+        if not is_allowed(record["licence"]):
+            problems.append(f"{title}: licence {record['licence']!r} is not redistributable")
+            continue
+
+        destination = out / filename
+        if destination.exists() and not force:
+            print(f"  kept     {filename}")
+            credits.append((filename, record))
+            continue
+
+        if index:
+            sleep(COURTESY_DELAY)
+        try:
+            body = _open(record["url"], timeout=120, sleep=sleep)
+        except Exception as exc:  # noqa: BLE001 - one bad file must not end the run
+            problems.append(f"{title}: download failed ({exc})")
+            continue
+
+        # Written via a temporary name: a half-downloaded .jpg left in images/
+        # would be picked up by the app's glob and fail to open.
+        partial = destination.with_suffix(destination.suffix + ".part")
+        partial.write_bytes(body)
+        partial.replace(destination)
+        print(f"  fetched  {filename}  ({record['licence']})")
+        credits.append((filename, record))
+
+    return credits, problems
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, default=Path("images"))
+    parser.add_argument("--force", action="store_true", help="re-download existing files")
+    args = parser.parse_args(argv)
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    metadata = fetch_metadata([title for title, _name in WANTED])
+    credits, problems = download_all(WANTED, metadata, args.out, force=args.force)
+
+    if credits:
+        # Before reporting problems: an image on disk without its credit line
+        # is worse than a failed fetch, so this happens even on a partial run.
+        print(f"\nwrote {write_sources(args.out, credits)} with {len(credits)} credit(s)")
+
+    if problems:
+        print("\nnot fetched:")
+        for line in problems:
+            print(f"  {line}")
+        print("\nRe-run to retry — existing files are kept.")
+
+    if not credits:
+        print("\nnothing fetched")
+        return 1
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":
