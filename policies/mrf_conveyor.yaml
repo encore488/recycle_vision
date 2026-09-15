@@ -3,10 +3,13 @@
 # The same detector, a different context, and therefore different rules.
 #
 # A household policy reasonably assumes a detected "cup" is a cup. On a
-# recycling sorting line that assumption is wrong: QA on real conveyor
-# imagery found that every "cup" and "bowl" the model reported was in fact a
-# container -- a steel can, an aluminium can, a can lid, a yogurt tub. There
-# is no tableware on a MRF line. This policy encodes that context.
+# recycling sorting line that assumption is wrong: there is no tableware on a
+# MRF line, so a "cup"-shaped detection is a can, a tub or a jar. That is a
+# fact about sorting lines, not a measurement -- it is why this policy exists.
+#
+# It was first noticed on a single conveyor photograph, where every "cup" and
+# "bowl" the model reported turned out to be a container. One image cannot
+# establish the rule; it is recorded here as how the rule was spotted.
 #
 # It also mirrors how a MRF actually sorts. The first pass separates the
 # stream into containers, fibre and residue; the metal/plastic/glass split
@@ -15,8 +18,9 @@
 # destination, not a guess between aluminium and PP that the detector cannot
 # support.
 #
-# Fitted against a small sample. Re-measure with `recyclevision.qa` before
-# trusting it on a new line.
+# Not measured against a held-out sample of its own. The routing logic is
+# domain knowledge; the confidence in it is not calibrated. Re-measure with
+# `scripts/evaluate.py --policy` on imagery from the line it will run on.
 
 name: MRF Sorting Line
 description: >-

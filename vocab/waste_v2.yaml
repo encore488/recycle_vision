@@ -1,22 +1,27 @@
 # Open-vocabulary prompts, v2 — designed backwards from the bins.
 #
-# v1 scored 100% detection precision but only 62% class accuracy: it named
-# 38% of the objects it found wrongly. Every one of those errors was a
-# distinction the vocabulary asked for but the routing did not need:
+# The rule this file follows: **ask for a distinction only where it changes a
+# routing decision.** Aluminium versus steel is not such a distinction — both
+# go in the same bin in every shipped policy, and a MRF separates them
+# downstream by magnet and eddy current without the camera's help. So v2 asks
+# for "metal can" and stops there. Container glass versus tableware IS such a
+# distinction, because a tumbler ruins a batch of container glass, so that
+# split stays.
 #
-#   "aluminum drink can" fired on a steel food can   (both -> recycling)
-#   "metal bottle cap"   fired on a can end          (both -> recycling)
-#   "aluminum drink can" fired on a plastic bottle   (both -> recycling)
-#   "styrofoam"          fired on a sheet of paper   (different bins - a real error)
+# That rule is the reason for every merge here. It stands on how waste is
+# actually sorted, not on any measurement.
 #
-# The rule this file follows: ask for a distinction only where it changes a
-# routing decision. Separating aluminium from steel costs accuracy and buys
-# nothing, because both go in the same bin and a MRF's magnet separates them
-# downstream anyway. So v2 merges them.
+# ON THE EVIDENCE BEHIND THE WORDING. Some prompt wordings below were picked
+# by looking at two images during early development: one conveyor photograph
+# and one of household items on a carpet. Two images are enough to notice a
+# prompt misfiring and nowhere near enough to conclude one works. Those
+# wordings are marked `# provisional` where they appear.
 #
-# The one genuinely wrong routing in v1 -- paper read as foam -- is addressed
-# by adding the prompt that was missing ("sheet of paper") and deleting the one
-# that over-fired. See the note beside the foam classes below.
+# Nothing in this project is measured against those two images any more, and
+# they are not training data — they never were. The measurements come from a
+# held-out split of WaRP (docs/DATA_CARD.md). When MRF imagery is available,
+# re-run `scripts/zeroshot_eval.py` against it: that is how a provisional
+# wording stops being provisional, or gets replaced.
 #
 # Rebuild embeddings after editing:
 #     python scripts/build_vocab_embeddings.py vocab/waste_v2.yaml
@@ -43,23 +48,32 @@ classes:
   - plastic bag
   - plastic wrapper
 
-  # NO foam class. v1's "styrofoam" fired on a sheet of paper, and every
-  # replacement tested -- "foam cup or tray", "white foam packaging",
-  # "polystyrene foam block" -- captured the same sheet of paper instead of
-  # anything foam. Neither validation image contains foam, so the prompt had
-  # nothing to match and settled on the nearest pale flat object, sending
-  # recyclable paper to landfill.
+  # NO foam class -- provisional, and the weakest call in this file.
   #
-  # A prompt that cannot be shown to work is a liability, not a gap: removing
-  # it takes those detections back to "sheet of paper", which is correct.
-  # Reinstate it when there is an image with foam in it to test against.
+  # Foam is real, common in a waste stream, and routes differently from
+  # everything near it (landfill, not recycling). There is a good argument
+  # that it belongs here.
+  #
+  # It was dropped because "styrofoam" and every replacement tried -- "foam
+  # cup or tray", "white foam packaging", "polystyrene foam block" -- fired on
+  # a sheet of paper instead, sending recyclable paper to landfill. But the
+  # reason they did is that NEITHER TEST IMAGE CONTAINED ANY FOAM: a prompt
+  # with no referent attaches to the nearest plausible thing. That is evidence
+  # about the test set, not about the prompt.
+  #
+  # So this is a hole, not a finding. The first MRF image containing foam
+  # settles it -- until then a prompt that cannot be shown to work is still
+  # worse than an honest gap, because the failure mode sends fibre to
+  # landfill.
 
   # Glass -- container vs tableware IS a bin distinction (a tumbler ruins a
   # batch of container glass), so unlike the metals this split stays.
   #
-  # "drinking glass" alone lost to "metal can" on a transparent tumbler once
-  # the metals were merged; "empty drinking glass" wins it back. "clear glass
-  # tumbler" also fired on the plastic container, so it was rejected.
+  # provisional wording: "drinking glass" alone lost to "metal can" on ONE
+  # transparent tumbler, in one photograph, on a carpet. "empty drinking
+  # glass" won that one object back. One object is a hint, not a result --
+  # and a MRF line has no tableware on it at all, so the case this wording
+  # was tuned for may not arise in the target domain.
   - glass bottle
   - glass jar
   - empty drinking glass

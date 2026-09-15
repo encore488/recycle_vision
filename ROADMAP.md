@@ -257,10 +257,15 @@ Separates "used a model" from "understands ML". Gated on real data.
       needed conf 0.005 to reach 64%. This reaches 56.7% recall at 76.8% precision
       without a pathological threshold, which was the stated success condition.
 
-      `beverage carton` is the weakest class at 162 instances — not obviously a data
-      shortage, since `cardboard box` scores higher on 17. Worth a confusion matrix
-      before concluding anything: a carton read as cardboard shares a bin and costs
-      nothing, while a carton read as a bottle does not.
+      **Routing accuracy 96.1% against the MRF policy** (4 destinations across 5
+      classes), class accuracy 96.0%. Against the household policy it reads 100%,
+      which is meaningless there: every WaRP class routes to "Mixed Recycling", so
+      the metric cannot fail. `scripts/evaluate.py` now says which case it is in.
+
+      The confusions are almost all bin-changing here — carton↔bottle is fibre vs
+      plastic. Only 1 of 48 was harmless. That is the honest shape of the result:
+      on a sorting line these errors cost something, and the headline number is
+      96.1%, not 100%.
 - [ ] ~~Import SortWaste~~ (unobtainable; WaRP used instead). The first honest number this
       project will have: everything scored so far rests on 2 clean photos, and the
       vocabulary was tuned while looking at them. See [docs/DATA_PLAN.md](docs/DATA_PLAN.md).
