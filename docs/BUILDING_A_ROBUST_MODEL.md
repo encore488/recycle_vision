@@ -1,0 +1,97 @@
+# Building a robust model from public data
+
+The premise changed: no access to a specific facility for a long while, so
+the model has to generalise across facilities rather than fit one. That is a
+different goal from the WaRP run, and it needs a different measurement.
+
+## What the WaRP model actually proved
+
+**mAP50 0.671, routing accuracy 96.1%** — on WaRP's own held-out split. Same
+plant, same cameras, same lighting, same conveyor. It is an honest number for
+"can this work at all", and it says yes.
+
+It says nothing about a different facility. A model can reach 96% on one
+plant by learning that plant's belt colour and still collapse elsewhere. The
+only way to know is to hold out a **facility**, not a set of frames.
+
+## The measurement that matters now
+
+Import each dataset separately, train on some, evaluate on one that was never
+trained on:
+
+```bash
+# Train on two facilities
+python scripts/import_dataset.py <warp>/data.yaml    --mapping mappings/warp.yaml    --out datasets/train_pool
+python scripts/import_dataset.py <other>/data.yaml   --mapping mappings/<other>.yaml --out datasets/train_pool
+
+# Hold a third out entirely
+python scripts/import_dataset.py <third>/data.yaml   --mapping mappings/<third>.yaml --out datasets/holdout
+
+python train.py --data datasets/train_pool/data.yaml --epochs 100
+python scripts/evaluate.py --weights runs/detect/<run>/weights/best.pt \
+    --data datasets/holdout/data.yaml --policy policies/mrf_conveyor.yaml
+```
+
+The gap between the two numbers is the thing being built. Expect it to be
+large at first — that is the finding, not a failure.
+
+Filenames are prefixed per source, so imports merge into one directory
+without overwriting each other, and `sources.json` records which source
+contributed what. That file is what lets a held-out facility be chosen
+deliberately rather than by accident.
+
+## What to add, in priority order
+
+The current model knows five classes, all rigid containers, from one plant.
+The gaps are not evenly valuable:
+
+1. **A second and third sorting facility.** Different belts, lighting and
+   clutter. This buys generalisation and nothing else does. Highest value by
+   a distance.
+2. **Film and flexible plastic.** A MRF "tangler", its own destination, and
+   absent from WaRP entirely. Also the hardest shape for a box detector.
+3. **Fibre that is not a box** — loose paper, newspaper. Common, and the
+   current model has never seen it.
+4. **Organics.** Routes to a bin nothing else routes to.
+5. **Tableware.** The drinking-glass-versus-jar case the README opens with.
+   Real, but rare on an industrial line — worth less here than it looks.
+
+Every one needs a `mappings/*.yaml` translating its classes into
+`vocab/waste_v2.yaml`. Unmapped classes are refused rather than dropped, so
+writing the mapping is where the thinking happens; the import is mechanical.
+
+## Where things go
+
+| what | where | in git? |
+| --- | --- | --- |
+| Demo images for the app | `images/` | yes — small, credited in `images/SOURCES.md` |
+| Raw downloaded datasets | anywhere outside the repo (`~/datasets/…`) | no |
+| Imported training sets | `datasets/` | no — gitignored |
+| Class translations | `mappings/*.yaml` | yes — this is the real work |
+| Trained weights | `models/best_model.pt` | no — gitignored |
+| Frames from video | `datasets/raw/` via `scripts/extract_frames.py` | no |
+
+Raw datasets do not belong in the repository: they are large, and their
+licences usually permit use but not redistribution. The mapping file is the
+part worth committing, and it is the part that took judgement.
+
+## Video
+
+`scripts/extract_frames.py` pulls frames and drops near-duplicates. Point it
+anywhere; send the output to `datasets/raw`, then pre-label with the model
+that exists:
+
+```bash
+python scripts/extract_frames.py <a video> --out datasets/raw
+python scripts/prelabel.py datasets/raw --out datasets/round1 --weights models/best_model.pt
+```
+
+Correct the pre-labels, train, and use the better model to pre-label the next
+batch. Each round is faster than the last — that loop is why the WaRP model
+was worth 18 hours even though WaRP is not the target domain.
+
+**Split video by block, never at random.** Consecutive frames are nearly
+identical, so a random split puts near-copies of the same object on both
+sides and reports a score that cannot be reproduced on anything new.
+`prelabel.py` already splits by block; the trap is only there if frames are
+shuffled by hand first.

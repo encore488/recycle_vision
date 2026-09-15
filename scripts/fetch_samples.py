@@ -50,8 +50,12 @@ WANTED = [
     ("File:Material recovery facility 2004-03-24.jpg", "mrf_line.jpg"),
     ("File:Materials recovery facility 2.jpg", "mrf_sorting.jpg"),
     ("File:Greenville Public Works, ECVC Recycling Sorting facility - 10.jpg", "mrf_handsort.jpg"),
-    ("File:Single stream recycling.jpg", "mrf_singlestream.jpg"),
-    ("File:Recycling plant conveyor belt.jpg", "mrf_conveyor.jpg"),
+    ("File:Cycle sorters.jpg", "mrf_pickers.jpg"),
+    (
+        "File:Plastic recycling facility - Equipement de recyclage du plastique (3267337484).jpg",
+        "mrf_plastics.jpg",
+    ),
+    ("File:A plastic bottle collection facility for recycling.jpg", "mrf_bottles.jpg"),
 ]
 
 #: Licences that permit redistribution with attribution. Anything carrying

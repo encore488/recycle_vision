@@ -15,6 +15,7 @@ produces a correct dataset or produces an error and no files.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from collections import Counter
@@ -37,6 +38,35 @@ from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary  # noqa: E402
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
+def read_sources(root: Path) -> dict:
+    """Which source contributed which filename prefix to a merged dataset."""
+    path = root / "sources.json"
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_sources(root: Path, record: dict) -> Path:
+    """Record provenance beside the data, so a merged set can be accounted for.
+
+    A training set assembled from several public datasets is otherwise
+    unattributable a month later, and "which facility did this come from" is
+    the question a cross-domain split depends on.
+    """
+    path = root / "sources.json"
+    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def slugify(name: str) -> str:
+    """A short filesystem-safe tag for one source dataset."""
+    kept = [c.lower() if c.isalnum() else "-" for c in name]
+    return "-".join(part for part in "".join(kept).split("-") if part)[:32]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("data_yaml", type=Path, help="the external dataset's data.yaml")
@@ -47,6 +77,13 @@ def main(argv: list[str] | None = None) -> int:
         "--link",
         action="store_true",
         help="hardlink images instead of copying — worth it for large datasets",
+    )
+    parser.add_argument(
+        "--prefix",
+        default=None,
+        help="prepended to every output filename; defaults to a slug of the mapping "
+        "name. Public datasets number their frames from 1, so importing two into one "
+        "directory without this silently overwrites the overlap. Pass '' to disable.",
     )
     args = parser.parse_args(argv)
 
@@ -113,6 +150,21 @@ def main(argv: list[str] | None = None) -> int:
     for cache in stale:
         # Ultralytics would otherwise reuse this and ignore what we write.
         print(f"  removed stale label cache: {cache}")
+    prefix = slugify(mapping.name) + "-" if args.prefix is None else args.prefix
+    sources = read_sources(args.out)
+
+    # Refuse before writing: a prefix already claimed by a different source
+    # means this import would overwrite that source's images, and the label
+    # count afterwards would look perfectly healthy.
+    owner = sources.get(prefix, {}).get("mapping")
+    if owner is not None and owner != mapping.name:
+        parser.error(
+            f"\nprefix {prefix!r} in {args.out} already belongs to {owner!r}.\n"
+            f"Importing {mapping.name!r} over it would overwrite that source's images.\n"
+            "Pass a distinct --prefix."
+        )
+    if prefix:
+        print(f"\nfilenames prefixed {prefix!r}, so this can be merged with other sources")
     counts: Counter[str] = Counter()
     copied = unlabelled = 0
 
@@ -137,16 +189,19 @@ def main(argv: list[str] | None = None) -> int:
                     lines.append(remapped)
                     counts[vocabulary.classes[int(remapped.split()[0])]] += 1
 
-            destination = args.out / "images" / split / image.name
+            stem = f"{prefix}{image.stem}" if prefix else image.stem
+            destination = args.out / "images" / split / f"{stem}{image.suffix}"
             if args.link:
                 try:
+                    if destination.exists():
+                        destination.unlink()
                     destination.hardlink_to(image)
                 except (OSError, FileExistsError):
                     shutil.copy2(image, destination)
             else:
                 shutil.copy2(image, destination)
 
-            (args.out / "labels" / split / f"{image.stem}.txt").write_text(
+            (args.out / "labels" / split / f"{stem}.txt").write_text(
                 "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
             )
             copied += 1
@@ -154,6 +209,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {split}: {len(images)} image(s)")
 
     data_yaml = write_data_yaml(args.out, vocabulary.classes)
+    sources[prefix] = {
+        "mapping": mapping.name,
+        "source": str(args.data_yaml),
+        "images": copied,
+        "instances": dict(counts),
+    }
+    write_sources(args.out, sources)
 
     print(f"\nimported {copied} image(s)")
     if unlabelled:
