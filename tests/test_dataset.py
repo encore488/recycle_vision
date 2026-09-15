@@ -14,6 +14,7 @@ from recyclevision.dataset import (
     is_novel,
     polygon_line,
     prepare_tree,
+    spread_sample,
     thumbnail_of,
     write_data_yaml,
 )
@@ -171,3 +172,42 @@ class TestLabelCaches:
         prepare_tree(tmp_path)
 
         assert kept.read_text(encoding="utf-8") == "15 0.5 0.5 0.2 0.2\n"
+
+
+class TestSpreadSample:
+    """Selection for the hand-labelled evaluation set.
+
+    Not a uniform random draw: these listings sort by filename, which for
+    video-derived data means they sort by time. A clumped sample is a handful
+    of moments rather than a survey, and an eval set built that way flatters
+    or damns a model for reasons nobody can reconstruct.
+    """
+
+    def test_the_same_seed_gives_the_same_selection(self):
+        items = list(range(500))
+        assert spread_sample(items, 20, seed=7) == spread_sample(items, 20, seed=7)
+
+    def test_a_different_seed_gives_a_different_selection(self):
+        items = list(range(500))
+        assert spread_sample(items, 20, seed=1) != spread_sample(items, 20, seed=2)
+
+    def test_the_sample_spans_the_whole_sequence(self):
+        picked = spread_sample(list(range(1000)), 10, seed=0)
+        assert min(picked) < 150, "nothing from the start of the dataset"
+        assert max(picked) > 850, "nothing from the end of the dataset"
+
+    def test_no_item_is_picked_twice(self):
+        picked = spread_sample(list(range(200)), 40, seed=3)
+        assert len(picked) == len(set(picked))
+
+    def test_asking_for_more_than_exists_returns_everything(self):
+        assert spread_sample([1, 2, 3], 10) == [1, 2, 3]
+
+    def test_asking_for_none_returns_none(self):
+        assert spread_sample([1, 2, 3], 0) == []
+
+    def test_an_empty_sequence_is_not_an_error(self):
+        assert spread_sample([], 5) == []
+
+    def test_the_requested_count_is_honoured(self):
+        assert len(spread_sample(list(range(97)), 13, seed=0)) == 13

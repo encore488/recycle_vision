@@ -187,3 +187,33 @@ def prepare_tree(root: Path) -> list[Path]:
         for split in ("train", "val"):
             (root / kind / split).mkdir(parents=True, exist_ok=True)
     return clear_label_caches(root)
+
+
+def spread_sample(items: list, count: int, seed: int = 0) -> list:
+    """Pick `count` items spread across a sequence, deterministically.
+
+    Not `random.sample`: a uniform draw over a sorted listing clumps, and
+    these listings are sorted by filename, which for video-derived datasets
+    means sorted by time. A clumped sample is a handful of moments rather
+    than a survey of the dataset, and an evaluation set assembled that way
+    flatters or damns a model for reasons nobody can trace.
+
+    So the sequence is cut into `count` contiguous buckets and one item is
+    drawn from each. That guarantees coverage end to end, and the seeded draw
+    within each bucket keeps it from being the same systematic offset every
+    time. Same seed, same selection -- an eval set has to be reproducible.
+    """
+    import random
+
+    if count <= 0 or not items:
+        return []
+    if count >= len(items):
+        return list(items)
+
+    rng = random.Random(seed)
+    chosen = []
+    for index in range(count):
+        start = index * len(items) // count
+        stop = (index + 1) * len(items) // count
+        chosen.append(items[rng.randrange(start, max(stop, start + 1))])
+    return chosen

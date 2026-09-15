@@ -1,0 +1,53 @@
+# ZeroWaste-f -> RecycleVision vocabulary (waste_v2)
+#
+# LICENCE: CC BY-NC 4.0 — NonCommercial. Fine for research, a portfolio piece
+# and a demo. NOT fine for a commercial product, and a model trained on it is
+# at best a grey area. Recorded here rather than in a footnote because the
+# stated ambition for this project is "a tool people actually use", and that
+# decision has to be made with this in view. docs/DATA_CARD.md carries it too.
+#
+# Why it is worth having anyway: it is a DIFFERENT facility from WaRP, which
+# is the only thing that buys generalisation, and it has `soft_plastic` —
+# film — which WaRP lacks entirely and which routes to its own destination.
+#
+# 4,503 images, splits 3002 / 572 / 929. Severely imbalanced: cardboard is
+# over 66% of annotations, metal under 2%. Expect metal to score badly here
+# for the same reason `cardboard box` did on WaRP, and do not read it as a
+# model failure.
+
+name: ZeroWaste-f
+source: https://github.com/dbash/zerowaste
+description: >-
+  Industrial recycling facility conveyor, cluttered and deformable. Four
+  material classes. CC BY-NC 4.0.
+
+mapping:
+  # Fibre. ZeroWaste's cardboard is corrugated board on a belt, which is what
+  # `cardboard box` means here even when it arrives flattened or torn.
+  cardboard: cardboard box
+
+  # Film. The class WaRP could not express at all, and a MRF "tangler" with a
+  # destination of its own. The single most valuable thing this dataset adds.
+  soft_plastic: plastic bag
+
+  # Rigid plastic is a MATERIAL, not an item, and this project routes items.
+  # `plastic bottle` is the most common rigid plastic on a sorting line and
+  # shares a bin with every other rigid plastic in both shipped policies, so
+  # nothing is mis-routed — but the label is a generalisation, and a model
+  # trained on it will call tubs and trays "plastic bottle".
+  #
+  # That is a real cost and it is recorded in cannot_express below. It would
+  # be wrong to invent a finer distinction the annotations cannot support.
+  rigid_plastic: plastic bottle
+
+  # Likewise: one metal class, no aluminium/steel split. waste_v2 merged those
+  # anyway, on routing grounds, so nothing is lost here.
+  metal: metal can
+
+cannot_express:
+  - plastic tub vs plastic cup vs plastic bottle — one `rigid_plastic` class covers all
+  - plastic bag vs plastic wrapper — one `soft_plastic` class covers both
+  - glass of any kind — ZeroWaste-f has no glass class at all
+  - beverage carton vs cardboard box — cartons fall under `cardboard`
+  - paper cup, sheet of paper, newspaper — no non-board fibre class
+  - anything organic — no organics class

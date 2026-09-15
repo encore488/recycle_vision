@@ -79,6 +79,15 @@ def main(argv: list[str] | None = None) -> int:
         help="hardlink images instead of copying — worth it for large datasets",
     )
     parser.add_argument(
+        "--exclude",
+        type=Path,
+        default=None,
+        help="a gold_eval manifest.json; images reserved for hand-labelled "
+        "evaluation are skipped. Training on an image that is also in the "
+        "evaluation set makes every number after it meaningless, and nothing "
+        "in the output would look wrong.",
+    )
+    parser.add_argument(
         "--prefix",
         default=None,
         help="prepended to every output filename; defaults to a slug of the mapping "
@@ -165,8 +174,23 @@ def main(argv: list[str] | None = None) -> int:
         )
     if prefix:
         print(f"\nfilenames prefixed {prefix!r}, so this can be merged with other sources")
+    reserved: set[str] = set()
+    if args.exclude is not None:
+        if not args.exclude.is_file():
+            parser.error(f"no manifest at {args.exclude}")
+        held = json.loads(args.exclude.read_text(encoding="utf-8")).get("images", {})
+        # Matched on the OUTPUT filename, which is the only identity the two
+        # sides share. The evaluation set was built from an imported dataset,
+        # so its recorded paths point into that import; this run is walking
+        # the raw source, whose paths never coincide with them. What does
+        # coincide is the name this import will write -- prefix plus original
+        # stem -- which is exactly the basename the eval set copied.
+        reserved = {Path(entry.get("source_image", "")).name for entry in held.values()}
+        reserved.discard("")
+        print(f"excluding {len(reserved)} image(s) reserved for evaluation")
+
     counts: Counter[str] = Counter()
-    copied = unlabelled = 0
+    copied = unlabelled = excluded = 0
 
     for split in ("train", "val"):
         images_root = source_root / "images" / split
@@ -191,6 +215,9 @@ def main(argv: list[str] | None = None) -> int:
 
             stem = f"{prefix}{image.stem}" if prefix else image.stem
             destination = args.out / "images" / split / f"{stem}{image.suffix}"
+            if reserved and destination.name in reserved:
+                excluded += 1
+                continue
             if args.link:
                 try:
                     if destination.exists():
@@ -218,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
     write_sources(args.out, sources)
 
     print(f"\nimported {copied} image(s)")
+    if excluded:
+        print(f"held back {excluded} image(s) reserved for evaluation")
     if unlabelled:
         print(f"skipped {unlabelled} image(s) with no label file")
     if counts:
