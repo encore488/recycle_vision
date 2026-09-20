@@ -14,6 +14,47 @@ It says nothing about a different facility. A model can reach 96% on one
 plant by learning that plant's belt colour and still collapse elsewhere. The
 only way to know is to hold out a **facility**, not a set of frames.
 
+## Measure before you train
+
+The cheapest cross-facility number needs no training at all: take the model
+you already have and run it against a facility it has never seen. Every
+imported dataset carries the same 17-class descriptor, so this works
+directly.
+
+```bash
+python scripts/evaluate.py --weights models/best_model.pt \
+    --data datasets/zerowaste/data.yaml --policy policies/mrf_conveyor.yaml
+```
+
+Twenty minutes, and it answers the question the long run was going to answer.
+A model that holds up reasonably on an unseen plant says the approach
+transfers; one that collapses says multi-facility data is not optional —
+either way the next run is better chosen.
+
+**Then probe before committing.** `--fraction 0.2` trains on a fifth of the
+data. A direction that fails on a fifth rarely succeeds on all of it, and
+finding that out costs hours rather than days.
+
+## Choosing the holdout: check class coverage first
+
+A facility can only be a fair holdout if the training pool can *reach* every
+class in it. Otherwise the missing class is scored as a failure to
+generalise, when it is really a failure to have the data.
+
+```
+hold out WaRP       -> pool cannot reach: ['glass bottle']
+hold out SortWaste  -> pool cannot reach: ['plastic tub']
+hold out ZeroWaste  -> pool cannot reach: nothing
+```
+
+**WaRP is the worst choice**, despite being the obvious one. Neither other
+dataset has a single glass instance, so all 534 of WaRP's glass objects would
+be missed — and `glass bottle` routes to Container Glass, a bin nothing else
+reaches, so it damages routing accuracy too, not just class accuracy.
+
+**ZeroWaste is the clean holdout.** Every class it contains is reachable from
+WaRP + SortWaste. Hold that out, and the number means what it says.
+
 ## The measurement that matters now
 
 Import each dataset separately, train on some, evaluate on one that was never

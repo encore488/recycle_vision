@@ -177,6 +177,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument(
+        "--fraction",
+        type=float,
+        default=1.0,
+        help="train on this share of the data (0.2 = a fifth). A probe: it answers "
+        "'is this direction working' in hours instead of days, and a direction that "
+        "fails on a fifth of the data rarely succeeds on all of it.",
+    )
+    parser.add_argument(
         "--device",
         default="auto",
         help="'auto' (default) picks CUDA, then Apple Silicon 'mps', then 'cpu'. "
@@ -230,6 +238,11 @@ def main(argv: list[str] | None = None) -> int:
     chosen = "--model given" if args.model else f"a {task} model, to match"
     print(f"  labels are {geometry} — {chosen}")
     print(f"  epochs {args.epochs} · imgsz {args.imgsz} · batch {args.batch} · device {device}")
+    if args.fraction != 1.0:
+        print(
+            f"  PROBE RUN — {args.fraction:.0%} of the training data. Good for a "
+            "direction,\n  not for a number worth quoting."
+        )
     if device == "cpu":
         print("  CPU only — this will take many hours. See docs/TRAINING_ON_GPU.md")
     elif device == "mps":
@@ -249,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
+        fraction=args.fraction,
         device=device,
         patience=args.patience,
         cache=args.cache or False,
@@ -269,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
                 "imgsz": args.imgsz,
                 "batch": args.batch,
                 "patience": args.patience,
+                "fraction": args.fraction,
                 "cache": args.cache,
                 "started_utc": name,
             },
