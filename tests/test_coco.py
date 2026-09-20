@@ -150,3 +150,34 @@ class TestLocatingImages:
 
     def test_an_empty_name_resolves_to_nothing(self, tmp_path):
         assert locate("", index_images(self._tree(tmp_path))) is None
+
+
+class TestImageRootDiscovery:
+    """A COCO file is as often in an `annotations/` directory beside the
+    images as it is among them. SortWaste puts it at
+    <split>/annotations/train_coco.json with frames at <split>/images/;
+    ZeroWaste puts it at <split>/labels.json with frames at <split>/data/.
+    """
+
+    def test_images_beside_the_json_are_indexed(self, tmp_path):
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "a.png").write_bytes(b"\x89PNG")
+        assert locate("a.png", index_images(tmp_path)) is not None
+
+    def test_an_annotations_directory_holds_no_images(self, tmp_path):
+        # The case that needs the caller to step up a level.
+        annotations = tmp_path / "annotations"
+        annotations.mkdir()
+        (annotations / "train_coco.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "images").mkdir()
+        (tmp_path / "images" / "a.png").write_bytes(b"\x89PNG")
+
+        assert index_images(annotations) == {}
+        assert locate("a.png", index_images(annotations.parent)) is not None
+
+    def test_the_index_is_stable_across_calls(self, tmp_path):
+        # Which file a name resolves to must not depend on filesystem order.
+        for folder in ("data", "sem_seg"):
+            (tmp_path / folder).mkdir()
+            (tmp_path / folder / "f.png").write_bytes(b"\x89PNG")
+        assert index_images(tmp_path)["f.png"] == index_images(tmp_path)["f.png"]

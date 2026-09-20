@@ -230,8 +230,25 @@ def main(argv: list[str] | None = None) -> int:
     copied = unlabelled = excluded = 0
 
     if is_coco:
+        # A COCO file is as often in an `annotations/` directory beside the
+        # images as it is among them. SortWaste puts it at
+        # <split>/annotations/train_coco.json with frames at <split>/images/;
+        # ZeroWaste puts it at <split>/labels.json with frames at
+        # <split>/data/. Search where it sits, then step up until images
+        # appear, rather than demanding one convention.
         index = index_images(source_root)
-        print(f"\n{len(index) // 2} image file(s) under {source_root}")
+        for _ in range(2):
+            if index:
+                break
+            source_root = source_root.parent
+            index = index_images(source_root)
+        if not index:
+            parser.error(
+                f"\nfound no image files at or above {args.data_yaml.parent}.\n"
+                "The annotations are there but the frames are not — check the "
+                "archive extracted fully."
+            )
+        print(f"\nimages resolved under {source_root}")
         missing = 0
         for record in coco_images:
             image = locate(record.file_name, index)
