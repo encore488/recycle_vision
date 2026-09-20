@@ -187,3 +187,46 @@ class TestCrossCheck:
         labels.mkdir(parents=True)
         (labels / "a.txt").write_text("0 .5 .5 .2 .2\n99 .5 .5 .2 .2\n")
         assert inspect_dataset.count_yolo_labels(tmp_path, ["0 pet"]) == Counter({"pet": 1})
+
+
+class TestArchiveDetection:
+    """A split zip is `name.z01`, `name.z02`, ... beside a terminal
+    `name.zip`, and no part extracts alone. Downloading one part and being
+    told "no dataset found" is an easy hour to lose.
+    """
+
+    def test_ordinary_archives_are_recognised(self):
+        for name in ("a.zip", "a.tar", "a.tar.gz", "a.7z", "a.rar"):
+            assert inspect_dataset.is_archive(Path(name)), name
+
+    def test_split_zip_parts_are_recognised(self):
+        for name in ("zerowaste-aug.z01", "x.z02", "x.z99", "x.r00"):
+            assert inspect_dataset.is_archive(Path(name)), name
+
+    def test_data_files_are_not_archives(self):
+        for name in ("a.json", "a.yaml", "a.jpg", "a.txt", "a.z", "a.z1"):
+            assert not inspect_dataset.is_archive(Path(name)), name
+
+    def test_a_missing_terminal_zip_is_called_out(self, tmp_path):
+        part = tmp_path / "zerowaste-aug.z01"
+        part.write_bytes(b"x")
+        lines = "\n".join(inspect_dataset.describe_archives([part], tmp_path))
+        assert "MISSING" in lines
+        assert "zerowaste-aug.zip" in lines
+
+    def test_a_complete_split_set_is_not_reported_as_missing(self, tmp_path):
+        paths = []
+        for name in ("zw.z01", "zw.z02", "zw.zip"):
+            path = tmp_path / name
+            path.write_bytes(b"x")
+            paths.append(path)
+        lines = "\n".join(inspect_dataset.describe_archives(paths, tmp_path))
+        assert "MISSING" not in lines
+        assert "SPLIT zip" in lines
+
+    def test_a_lone_ordinary_zip_gets_no_split_advice(self, tmp_path):
+        path = tmp_path / "data.zip"
+        path.write_bytes(b"x")
+        lines = "\n".join(inspect_dataset.describe_archives([path], tmp_path))
+        assert "SPLIT zip" not in lines
+        assert "Extract them first" in lines

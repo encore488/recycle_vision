@@ -115,6 +115,52 @@ def report_yolo(data_yaml: Path) -> list[str]:
     return lines
 
 
+#: Archive extensions, including the numbered parts of a split zip.
+ARCHIVE_SUFFIXES = {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
+
+
+def is_archive(path: Path) -> bool:
+    """Whether a file is an archive, split-zip parts included.
+
+    A split zip is `name.z01`, `name.z02`, ... alongside a terminal
+    `name.zip`, and no part extracts on its own -- unzip needs the whole set
+    and reads them through the final `.zip`. Downloading one part and finding
+    "no dataset here" is an easy hour to lose.
+    """
+    suffix = path.suffix.lower()
+    if suffix in ARCHIVE_SUFFIXES:
+        return True
+    # .z01 .. .z99, and the .r00 form some tools still emit.
+    return len(suffix) == 4 and suffix[1] in "zr" and suffix[2:].isdigit()
+
+
+def describe_archives(archives: list[Path], root: Path) -> list[str]:
+    """Explain an unextracted download, including an incomplete split set."""
+    lines = ["Found archives rather than a dataset. Extract them first:"]
+    for path in sorted(archives)[:12]:
+        size = path.stat().st_size / 1e9 if path.exists() else 0
+        lines.append(f"  {path.relative_to(root)}  ({size:.2f} GB)")
+
+    parts = [p for p in archives if p.suffix.lower() != ".zip" and is_archive(p)]
+    if parts:
+        stems = {p.stem for p in parts}
+        terminal = {p.stem for p in archives if p.suffix.lower() == ".zip"}
+        missing = stems - terminal
+        lines.append("")
+        lines.append("These are parts of a SPLIT zip. No part extracts on its own —")
+        lines.append("unzip needs every part plus the terminal .zip, in one directory.")
+        if missing:
+            lines.append("")
+            for stem in sorted(missing):
+                lines.append(f"  {stem}.zip is MISSING — the split cannot be opened without it.")
+        lines.append("")
+        lines.append("Once every part is present:")
+        lines.append("  cd <that directory>")
+        lines.append("  zip -s0 <name>.zip --out whole.zip   # join the parts")
+        lines.append("  unzip whole.zip")
+    return lines
+
+
 def clean_name(name: str) -> str:
     """Strip an index prefix some converters bake into the class name.
 
@@ -245,6 +291,13 @@ def main(argv: list[str] | None = None) -> int:
                     print(line)
 
     if not found_any:
+        archives = find(args.root, is_archive, limit=30)
+        if archives:
+            print()
+            for line in describe_archives(archives, args.root):
+                print(line)
+            return 1
+
         print("\nNo YOLO descriptor and no COCO JSON found.")
         if txt_labels:
             print("There are .txt files, so this may be raw YOLO labels with no data.yaml:")
