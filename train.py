@@ -211,11 +211,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.data.is_file():
         parser.error(
-            f"no dataset descriptor at {args.data}.\n"
-            "Build one first:\n"
+            f"no dataset descriptor at {args.data}.\n\n"
+            "From a public dataset — inspect it, write a mapping, import it:\n"
+            "  python scripts/inspect_dataset.py <the download>\n"
+            "  python scripts/import_dataset.py <its data.yaml or COCO .json> \\\n"
+            f"      --mapping mappings/<name>.yaml --out {args.data.parent}\n"
+            "Repeat per source to pool several; filenames are prefixed so they merge.\n\n"
+            "From your own footage — extract frames, pre-label, then correct them:\n"
             "  python scripts/extract_frames.py belt.mp4 --out datasets/raw\n"
-            "  python scripts/prelabel.py datasets/raw --out datasets/conveyor\n"
-            "...then correct the labels before training on them."
+            "  python scripts/prelabel.py datasets/raw --out datasets/conveyor"
         )
 
     geometry, labels_dir = describe_geometry(args.data)
