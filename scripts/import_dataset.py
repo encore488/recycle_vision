@@ -23,6 +23,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from recyclevision.coco import (  # noqa: E402
+    CocoError,
+    index_images,
+    locate,
+    read_coco,
+    to_yolo_line,
+)
 from recyclevision.dataset import prepare_tree, write_data_yaml  # noqa: E402
 from recyclevision.external import (  # noqa: E402
     ClassMapping,
@@ -71,14 +78,30 @@ def slugify(name: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("data_yaml", type=Path, help="the external dataset's data.yaml")
+    parser.add_argument(
+        "data_yaml",
+        type=Path,
+        help="the external dataset's data.yaml, or a COCO annotations .json",
+    )
     parser.add_argument("--mapping", type=Path, required=True)
+    parser.add_argument(
+        "--split",
+        choices=["train", "val"],
+        default=None,
+        help="COCO only: which split this file becomes. A COCO file describes "
+        "one split and does not say which, so it has to be stated.",
+    )
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--vocabulary", type=Path, default=DEFAULT_VOCAB)
     parser.add_argument(
         "--link",
         action="store_true",
         help="hardlink images instead of copying — worth it for large datasets",
+    )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="import even when a declared split resolved to an empty directory",
     )
     parser.add_argument(
         "--exclude",
@@ -98,10 +121,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    is_coco = args.data_yaml.suffix.lower() == ".json"
+    if is_coco and args.split is None:
+        parser.error(
+            "--split is required for a COCO file: it describes one split and does not say which."
+        )
+
     try:
-        source_root, source_classes = read_yolo_data_yaml(args.data_yaml)
         mapping = ClassMapping.load(args.mapping)
-    except MappingError as exc:
+        if is_coco:
+            source_classes, coco_images = read_coco(args.data_yaml)
+            source_root = args.data_yaml.parent
+        else:
+            source_root, source_classes = read_yolo_data_yaml(args.data_yaml)
+            coco_images = []
+    except (MappingError, CocoError) as exc:
         parser.error(str(exc))
 
     print(f"{mapping.name}: {len(source_classes)} source class(es)")
@@ -176,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if prefix:
         print(f"\nfilenames prefixed {prefix!r}, so this can be merged with other sources")
+    empty_splits: list[str] = []
     reserved: set[str] = set()
     if args.exclude is not None:
         if not args.exclude.is_file():
@@ -194,46 +229,38 @@ def main(argv: list[str] | None = None) -> int:
     counts: Counter[str] = Counter()
     copied = unlabelled = excluded = 0
 
-    # Read the layout from the descriptor rather than assuming one. SortWaste
-    # is <split>/images/, WaRP is images/<split>/, and both are valid YOLO --
-    # ultralytics only ever follows the paths the descriptor declares. Guessing
-    # produced a silent success that imported nothing.
-    for split in ("train", "val", "test"):
-        images_root = read_split_images_dir(args.data_yaml, split)
-        if images_root is None:
-            continue
-        if not images_root.is_dir():
-            print(f"\n{split}: declared as {images_root}, which does not exist — skipping")
-            continue
-        labels_root = label_dir_for(images_root)
-
-        # This project's datasets have two splits. A source `test` split is
-        # real held-out data and throwing it away would discard thousands of
-        # instances, so it joins val, and the line below says so.
-        out_split = "train" if split == "train" else "val"
-
-        images = sorted(p for p in images_root.rglob("*") if p.suffix.lower() in IMAGE_SUFFIXES)
-        # Name the directory actually read. A descriptor written on another
-        # machine declares paths that cannot exist here, and the resolver
-        # falls back to matching the tail -- worth seeing rather than
-        # trusting silently.
-        destination_note = f" -> {out_split}" if split != out_split else ""
-        print(f"\n{split}{destination_note}: {len(images)} image(s) in {images_root}")
-        for image in images:
-            label = labels_root / image.relative_to(images_root).with_suffix(".txt")
-            if not label.is_file():
-                unlabelled += 1
+    if is_coco:
+        index = index_images(source_root)
+        print(f"\n{len(index) // 2} image file(s) under {source_root}")
+        missing = 0
+        for record in coco_images:
+            image = locate(record.file_name, index)
+            if image is None:
+                missing += 1
                 continue
 
-            lines = []
-            for line in label.read_text(encoding="utf-8").splitlines():
-                remapped = remap_label_line(line, index_map)
-                if remapped:
-                    lines.append(remapped)
-                    counts[vocabulary.classes[int(remapped.split()[0])]] += 1
+            width, height = record.width, record.height
+            if width <= 0 or height <= 0:
+                # Some releases omit the dimensions; the file itself has them.
+                from PIL import Image as _Image
 
-            stem = f"{prefix}{image.stem}" if prefix else image.stem
-            destination = args.out / "images" / out_split / f"{stem}{image.suffix}"
+                with _Image.open(image) as opened:
+                    width, height = opened.size
+
+            lines = []
+            for name, x, y, w, h in record.boxes:
+                target = mapping.translate(name)
+                if target is None:
+                    continue
+                line = to_yolo_line(vocabulary.classes.index(target), x, y, w, h, width, height)
+                if line:
+                    lines.append(line)
+                    counts[target] += 1
+
+            stem = (
+                f"{prefix}{Path(record.file_name).stem}" if prefix else Path(record.file_name).stem
+            )
+            destination = args.out / "images" / args.split / f"{stem}{image.suffix}"
             if reserved and destination.name in reserved:
                 excluded += 1
                 continue
@@ -246,11 +273,99 @@ def main(argv: list[str] | None = None) -> int:
                     shutil.copy2(image, destination)
             else:
                 shutil.copy2(image, destination)
-
-            (args.out / "labels" / out_split / f"{stem}.txt").write_text(
+            (args.out / "labels" / args.split / f"{stem}.txt").write_text(
                 "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
             )
             copied += 1
+
+        print(f"\n{args.split}: {copied} image(s) written")
+        if missing:
+            # Never silent: a COCO file listing images that are not on disk
+            # means a partial extract, and importing the remainder quietly
+            # would be the same failure as the empty-split case below.
+            parser.error(
+                f"\n{missing} image(s) named in {args.data_yaml.name} were not found "
+                f"under {source_root}.\n"
+                "The archive probably did not extract fully. Nothing has been kept."
+            )
+    else:
+        # Read the layout from the descriptor rather than assuming one. SortWaste
+        # is <split>/images/, WaRP is images/<split>/, and both are valid YOLO --
+        # ultralytics only ever follows the paths the descriptor declares. Guessing
+        # produced a silent success that imported nothing.
+        for split in ("train", "val", "test"):
+            images_root = read_split_images_dir(args.data_yaml, split)
+            if images_root is None:
+                continue
+            if not images_root.is_dir():
+                print(f"\n{split}: declared as {images_root}, which does not exist — skipping")
+                continue
+            labels_root = label_dir_for(images_root)
+
+            # This project's datasets have two splits. A source `test` split is
+            # real held-out data and throwing it away would discard thousands of
+            # instances, so it joins val, and the line below says so.
+            out_split = "train" if split == "train" else "val"
+
+            images = sorted(p for p in images_root.rglob("*") if p.suffix.lower() in IMAGE_SUFFIXES)
+            # Name the directory actually read. A descriptor written on another
+            # machine declares paths that cannot exist here, and the resolver
+            # falls back to matching the tail -- worth seeing rather than
+            # trusting silently.
+            destination_note = f" -> {out_split}" if split != out_split else ""
+            print(f"\n{split}{destination_note}: {len(images)} image(s) in {images_root}")
+            if not images:
+                empty_splits.append(split)
+            for image in images:
+                label = labels_root / image.relative_to(images_root).with_suffix(".txt")
+                if not label.is_file():
+                    unlabelled += 1
+                    continue
+
+                lines = []
+                for line in label.read_text(encoding="utf-8").splitlines():
+                    remapped = remap_label_line(line, index_map)
+                    if remapped:
+                        lines.append(remapped)
+                        counts[vocabulary.classes[int(remapped.split()[0])]] += 1
+
+                stem = f"{prefix}{image.stem}" if prefix else image.stem
+                destination = args.out / "images" / out_split / f"{stem}{image.suffix}"
+                if reserved and destination.name in reserved:
+                    excluded += 1
+                    continue
+                if args.link:
+                    try:
+                        if destination.exists():
+                            destination.unlink()
+                        destination.hardlink_to(image)
+                    except (OSError, FileExistsError):
+                        shutil.copy2(image, destination)
+                else:
+                    shutil.copy2(image, destination)
+
+                (args.out / "labels" / out_split / f"{stem}.txt").write_text(
+                    "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
+                )
+                copied += 1
+
+    # A split that resolved to a real directory holding no images is not a
+    # missing split -- it is a directory that should have had images in it.
+    # Importing the remainder and calling it a dataset is how a fraction of
+    # the intended data gets trained on with nothing looking wrong.
+    if empty_splits and copied and not args.allow_partial:
+        parser.error(
+            f"\n{', '.join(empty_splits)} resolved to real directories containing no "
+            f"images, while other splits had some.\n"
+            "That is a partial dataset, not a complete one, so nothing has been kept.\n\n"
+            "Usually the archive did not extract fully, or the images live somewhere "
+            "other than\nwhere the descriptor says. Check what is actually there:\n"
+            + "\n".join(
+                f"  ls {read_split_images_dir(args.data_yaml, s)} | head" for s in empty_splits
+            )
+            + "\n\nRe-run once they are populated, or pass --allow-partial to import "
+            "what exists."
+        )
 
     # An import that wrote nothing is a failure, however calmly it ran. The
     # previous version printed "imported 0 image(s)" beside a dataset path and
