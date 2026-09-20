@@ -260,3 +260,56 @@ def test_a_partial_overlap_is_not_enough():
 
 def test_an_empty_class_list_is_not_an_import():
     assert not external.looks_already_imported([], ["metal can"])
+
+
+# --- descriptors written on another machine ---------------------------------
+
+
+def test_a_declared_path_that_exists_is_used_unchanged(tmp_path):
+    real = tmp_path / "train" / "images"
+    real.mkdir(parents=True)
+    assert external.relocate(real, tmp_path) == real
+
+
+def test_an_absolute_foreign_path_relocates_by_its_tail(tmp_path):
+    # SortWaste's descriptor points at /home/socialab/Desktop/Sara/... and
+    # cannot resolve anywhere else. The tail is what survives the move.
+    real = tmp_path / "train" / "images"
+    real.mkdir(parents=True)
+    declared = Path("/home/socialab/Desktop/Sara/dissertacao/my/train/images")
+    assert external.relocate(declared, tmp_path) == real
+
+
+def test_relocation_survives_a_renamed_parent(tmp_path):
+    # The same dataset ships as splited_all_dataset_yolo but its descriptor
+    # says splited_dataset_all_yolo. Only the last segments can be trusted.
+    real = tmp_path / "train" / "images"
+    real.mkdir(parents=True)
+    declared = Path("/elsewhere/splited_dataset_all_yolo/train/images")
+    assert external.relocate(declared, tmp_path) == real
+
+
+def test_an_unresolvable_path_is_returned_unchanged(tmp_path):
+    # So the caller's error can still show what the descriptor asked for.
+    declared = Path("/nowhere/at/all/train/images")
+    assert external.relocate(declared, tmp_path) == declared
+
+
+def test_relocation_does_not_match_a_file(tmp_path):
+    (tmp_path / "images").write_text("not a directory", encoding="utf-8")
+    declared = Path("/elsewhere/images")
+    assert external.relocate(declared, tmp_path) == declared
+
+
+def test_read_split_images_dir_relocates_a_foreign_descriptor(tmp_path):
+    import yaml
+
+    real = tmp_path / "val" / "images"
+    real.mkdir(parents=True)
+    descriptor = tmp_path / "data.yaml"
+    alien = "/home/someone/their_dataset"
+    descriptor.write_text(
+        yaml.safe_dump({"path": alien, "val": f"{alien}/val/images", "names": ["x"]}),
+        encoding="utf-8",
+    )
+    assert external.read_split_images_dir(descriptor, "val") == real

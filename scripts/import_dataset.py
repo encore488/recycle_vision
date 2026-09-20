@@ -211,10 +211,14 @@ def main(argv: list[str] | None = None) -> int:
         # real held-out data and throwing it away would discard thousands of
         # instances, so it joins val, and the line below says so.
         out_split = "train" if split == "train" else "val"
-        if split != out_split:
-            print(f"\n{split} -> {out_split}")
 
         images = sorted(p for p in images_root.rglob("*") if p.suffix.lower() in IMAGE_SUFFIXES)
+        # Name the directory actually read. A descriptor written on another
+        # machine declares paths that cannot exist here, and the resolver
+        # falls back to matching the tail -- worth seeing rather than
+        # trusting silently.
+        destination_note = f" -> {out_split}" if split != out_split else ""
+        print(f"\n{split}{destination_note}: {len(images)} image(s) in {images_root}")
         for image in images:
             label = labels_root / image.relative_to(images_root).with_suffix(".txt")
             if not label.is_file():
@@ -247,8 +251,6 @@ def main(argv: list[str] | None = None) -> int:
                 "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
             )
             copied += 1
-
-        print(f"  {split}: {len(images)} image(s)")
 
     # An import that wrote nothing is a failure, however calmly it ran. The
     # previous version printed "imported 0 image(s)" beside a dataset path and

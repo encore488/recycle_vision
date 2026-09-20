@@ -181,7 +181,37 @@ def read_split_images_dir(path: str | Path, split: str = "train") -> Path | None
     if not root.is_absolute():
         root = (path.parent / root).resolve()
     candidate = Path(entry)
-    return candidate if candidate.is_absolute() else (root / candidate).resolve()
+    declared = candidate if candidate.is_absolute() else (root / candidate).resolve()
+    return relocate(declared, path.parent)
+
+
+def relocate(declared: Path, base: Path) -> Path:
+    """Find a split directory whose descriptor was written elsewhere.
+
+    Shared datasets routinely ship a data.yaml full of absolute paths from the
+    machine that built them -- SortWaste's points at
+    /home/socialab/Desktop/Sara/dissertacao/..., and even spells its own
+    parent directory differently from the archive it comes in. Those paths are
+    valid YOLO and cannot resolve anywhere else, so following them literally
+    finds nothing.
+
+    The tail is what survives relocation. Try progressively longer endings of
+    the declared path against the directory the descriptor actually sits in,
+    shortest first, so `train/images` matches regardless of what the
+    intervening directories were called on someone else's disk.
+
+    Returns the declared path unchanged when nothing matches, so a caller's
+    error message can still show what the descriptor asked for.
+    """
+    if declared.is_dir():
+        return declared
+
+    parts = declared.parts
+    for depth in range(1, min(len(parts), 4) + 1):
+        guess = base.joinpath(*parts[-depth:])
+        if guess.is_dir():
+            return guess
+    return declared
 
 
 def label_dir_for(images_dir: Path) -> Path:
