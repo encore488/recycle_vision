@@ -166,7 +166,14 @@ def main(argv: list[str] | None = None) -> int:
     manifest: dict[str, dict] = {}
     for source in args.sources:
         if not source.is_dir():
-            parser.error(f"not a directory: {source}")
+            parser.error(
+                f"no dataset at {source}.\n"
+                "--from takes an IMPORTED dataset, not a raw download. Import each "
+                "source first:\n"
+                "  python scripts/inspect_dataset.py <the raw download>   # find its classes\n"
+                "  python scripts/import_dataset.py <its data.yaml> \\\n"
+                f"      --mapping mappings/<name>.yaml --out {source}"
+            )
         try:
             read_yolo_data_yaml(source / "data.yaml")
         except MappingError as exc:
