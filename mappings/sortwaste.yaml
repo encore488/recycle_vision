@@ -1,57 +1,83 @@
 # SortWaste -> RecycleVision vocabulary (waste_v2)
 #
-# ⚠️ VERIFY THE CLASS NAMES BEFORE RELYING ON THIS FILE.
+# Keys are the class names EXACTLY as the YOLO descriptor spells them, index
+# prefix and all ("0 pet", "4 ecal"). They look wrong because they are: the
+# converter kept each original category id inside the name while renumbering
+# the YOLO index beside it, and the originals skipped 3, so from "4 ecal"
+# onward the two disagree. Cleaned duplicates are listed alongside so the
+# same mapping works if the dataset is ever re-imported from its COCO files.
 #
-# These keys were written from a second-hand description of the dataset, not
-# from the dataset itself, which is unreachable from the development sandbox.
-# The exact strings very likely differ in case, spacing or wording.
+# Before trusting this, run:
+#     python scripts/inspect_dataset.py <the sortwaste directory>
+# It cross-checks the YOLO labels against the COCO annotations. A converter
+# careless enough to mangle the names is careless enough to have renumbered
+# them without renumbering the label files.
 #
-#   python scripts/import_dataset.py <sortwaste>/data.yaml \
-#       --mapping mappings/sortwaste.yaml --out datasets/sortwaste
-#
-# lists every class it finds and refuses to run until each has a rule, so the
-# fix is mechanical: run it, read the error, correct the keys here.
-#
-# On the translation itself: SortWaste labels MATERIALS. This project routes
-# BINS, from ITEMS -- a finer distinction, and going this direction loses
-# information permanently (see `cannot_express`). The mapping is therefore
-# honest rather than clever: no rule pretends to recover a distinction the
-# source labels never made.
+# 5,261 images, ~87,500 instances across train/val/test. Far larger than WaRP
+# (2,974 / 10,374) and a different facility, which is what buys generalisation.
 
 name: SortWaste
-source: https://sortwaste.di.ubi.pt/
+source: Industrial waste sorting line, densely annotated
 description: >-
-  Top-down conveyor imagery from a mechanical-biological treatment facility.
-  Material-level classes, bounding boxes only, single facility.
+  Sorting-line imagery with eight material classes, boxes only. Dense
+  annotation -- roughly 16 instances per image, against WaRP's 1.74 -- so
+  precision measured here means much more than it does on WaRP.
 
 mapping:
-  # --- plastics -----------------------------------------------------------
-  PET: plastic bottle
-  PET Oil: plastic bottle
-  HDPE: plastic bottle
-  PP: plastic tub
-  Film: plastic wrapper
+  # --- bottles: three source classes, one destination ---------------------
+  # PET and HDPE ("pead" = polietileno de alta densidad) are both bottle-form
+  # rigid plastic and share a bin everywhere. The resin distinction is real
+  # and is made downstream by an optical sorter, not by this camera.
+  "0 pet": plastic bottle
+  "1 pead": plastic bottle
+  "8 pet_oleo": plastic bottle
+  pet: plastic bottle
+  pead: plastic bottle
+  pet_oleo: plastic bottle
+
+  # --- film ---------------------------------------------------------------
+  # A MRF tangler with its own destination, and the class WaRP could not
+  # express at all. 12,337 instances here against zero there.
+  "2 mixed_plastic_soft": plastic bag
+  mixed_plastic_soft: plastic bag
+
+  # --- cartons ------------------------------------------------------------
+  # ECAL = "envases de cartón para alimentos y líquidos" -- cardboard
+  # containers for food and liquids, i.e. beverage cartons. 19,227 instances,
+  # which would make this the largest source of carton training data by a
+  # wide margin: WaRP contributed 812, and `beverage carton` was the weakest
+  # class in the WaRP model at mAP50 0.474.
+  #
+  # ** This reading is an inference from the abbreviation, not something
+  # verified against the images. ** It routes cartons to fibre and would put
+  # 19k instances behind a guess, so spot-check a few `ecal` crops before
+  # training. If they turn out to be something else, only this line changes.
+  "4 ecal": beverage carton
+  ecal: beverage carton
 
   # --- metal --------------------------------------------------------------
-  # Neither SortWaste nor waste_v2 separates ferrous from aluminium, and for
-  # the same reason: both route identically. A rare case where the two
-  # taxonomies already agree.
-  Metal: metal can
+  "5 metal": metal can
+  metal: metal can
 
   # --- fibre --------------------------------------------------------------
-  ECAL: paper cup          # beverage carton — poly-lined fibre, same handling
-  Cardboard: cardboard box
-  Paper: sheet of paper
+  "6 cardboard": cardboard box
+  cardboard: cardboard box
 
-  # --- deliberately dropped ----------------------------------------------
-  # `null` means "do not import". Anything genuinely *unmapped* raises instead
-  # of being discarded quietly.
-  Other: null
-  Unknown: null
+  # --- other rigid plastic ------------------------------------------------
+  # `plastic tub`, not `plastic bottle`: this dataset already separates its
+  # bottles into pet/pead/pet_oleo, so what is left in "mixed rigid" is the
+  # non-bottle remainder -- tubs, trays, pots. Both route identically in both
+  # shipped policies, so the choice costs no routing accuracy and buys a
+  # truer item label. (ZeroWaste's coarser `rigid_plastic` cannot support
+  # this split, which is why its mapping differs.)
+  "7 mixed_plastic_rigid": plastic tub
+  mixed_plastic_rigid: plastic tub
 
 cannot_express:
-  - container glass vs drinking glass — the case the README opens with
-  - plastic-lined paper cup vs plain paper; ECAL is the nearest available label
-  - rigid plastic tub vs plastic cup
-  - metal can vs metal bottle cap
-  - anything organic
+  - glass of any kind — SortWaste has no glass class, so glass bottle/jar and the
+    drinking-glass-to-landfill case get nothing from it
+  - plastic bag vs plastic wrapper — one `mixed_plastic_soft` class covers both
+  - plastic cup — folded into `mixed_plastic_rigid` with tubs and trays
+  - paper cup, sheet of paper, newspaper — no fibre class but cardboard and cartons
+  - bottle caps of either material — not labelled separately
+  - anything organic — no organics class
