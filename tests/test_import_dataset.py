@@ -66,3 +66,65 @@ class TestSourceRegistry:
         )
         sources = import_dataset.read_sources(tmp_path)
         assert sources["plant-a-"]["mapping"] != sources["plant-b-"]["mapping"]
+
+
+class TestSplitLayouts:
+    """YOLO does not mandate a directory layout; the descriptor declares one.
+
+    WaRP is images/<split>/, SortWaste is <split>/images/, and both are
+    valid. Assuming the first meant importing SortWaste found nothing, said
+    "imported 0 image(s)", wrote a data.yaml, and printed the next command to
+    run — a dataset that looks real and contains nothing.
+    """
+
+    @staticmethod
+    def _descriptor(tmp_path, layout: str):
+        import yaml
+
+        paths = {
+            "images_first": {"train": "images/train", "val": "images/val"},
+            "split_first": {"train": "train/images", "val": "val/images"},
+        }[layout]
+        for split, rel in paths.items():
+            (tmp_path / rel).mkdir(parents=True)
+            labels = (
+                Path(str(tmp_path / rel).replace("images", "labels", 1))
+                if layout == "images_first"
+                else tmp_path / split / "labels"
+            )
+            labels.mkdir(parents=True, exist_ok=True)
+        descriptor = tmp_path / "data.yaml"
+        descriptor.write_text(
+            yaml.safe_dump({"path": ".", **paths, "names": {0: "x"}}, sort_keys=False),
+            encoding="utf-8",
+        )
+        return descriptor
+
+    def test_an_images_first_layout_resolves(self, tmp_path):
+        from recyclevision.external import label_dir_for, read_split_images_dir
+
+        descriptor = self._descriptor(tmp_path, "images_first")
+        images = read_split_images_dir(descriptor, "train")
+        assert images == tmp_path / "images" / "train"
+        assert label_dir_for(images) == tmp_path / "labels" / "train"
+
+    def test_a_split_first_layout_resolves(self, tmp_path):
+        from recyclevision.external import label_dir_for, read_split_images_dir
+
+        descriptor = self._descriptor(tmp_path, "split_first")
+        images = read_split_images_dir(descriptor, "train")
+        assert images == tmp_path / "train" / "images"
+        assert label_dir_for(images) == tmp_path / "train" / "labels"
+
+    def test_a_test_split_is_read_not_ignored(self, tmp_path):
+        import yaml
+
+        from recyclevision.external import read_split_images_dir
+
+        (tmp_path / "test" / "images").mkdir(parents=True)
+        descriptor = tmp_path / "data.yaml"
+        descriptor.write_text(
+            yaml.safe_dump({"path": ".", "test": "test/images", "names": {0: "x"}}),
+            encoding="utf-8",
+        )
+        assert read_split_images_dir(descriptor, "test") == tmp_path / "test" / "images"

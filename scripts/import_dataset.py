@@ -28,7 +28,9 @@ from recyclevision.external import (  # noqa: E402
     ClassMapping,
     MappingError,
     build_index_map,
+    label_dir_for,
     looks_already_imported,
+    read_split_images_dir,
     read_yolo_data_yaml,
     remap_label_line,
     trees_overlap,
@@ -192,12 +194,25 @@ def main(argv: list[str] | None = None) -> int:
     counts: Counter[str] = Counter()
     copied = unlabelled = excluded = 0
 
-    for split in ("train", "val"):
-        images_root = source_root / "images" / split
-        labels_root = source_root / "labels" / split
-        if not images_root.is_dir():
-            print(f"\nno {split} split at {images_root} — skipping")
+    # Read the layout from the descriptor rather than assuming one. SortWaste
+    # is <split>/images/, WaRP is images/<split>/, and both are valid YOLO --
+    # ultralytics only ever follows the paths the descriptor declares. Guessing
+    # produced a silent success that imported nothing.
+    for split in ("train", "val", "test"):
+        images_root = read_split_images_dir(args.data_yaml, split)
+        if images_root is None:
             continue
+        if not images_root.is_dir():
+            print(f"\n{split}: declared as {images_root}, which does not exist — skipping")
+            continue
+        labels_root = label_dir_for(images_root)
+
+        # This project's datasets have two splits. A source `test` split is
+        # real held-out data and throwing it away would discard thousands of
+        # instances, so it joins val, and the line below says so.
+        out_split = "train" if split == "train" else "val"
+        if split != out_split:
+            print(f"\n{split} -> {out_split}")
 
         images = sorted(p for p in images_root.rglob("*") if p.suffix.lower() in IMAGE_SUFFIXES)
         for image in images:
@@ -214,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
                     counts[vocabulary.classes[int(remapped.split()[0])]] += 1
 
             stem = f"{prefix}{image.stem}" if prefix else image.stem
-            destination = args.out / "images" / split / f"{stem}{image.suffix}"
+            destination = args.out / "images" / out_split / f"{stem}{image.suffix}"
             if reserved and destination.name in reserved:
                 excluded += 1
                 continue
@@ -228,12 +243,29 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 shutil.copy2(image, destination)
 
-            (args.out / "labels" / split / f"{stem}.txt").write_text(
+            (args.out / "labels" / out_split / f"{stem}.txt").write_text(
                 "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
             )
             copied += 1
 
         print(f"  {split}: {len(images)} image(s)")
+
+    # An import that wrote nothing is a failure, however calmly it ran. The
+    # previous version printed "imported 0 image(s)" beside a dataset path and
+    # a suggested next command, which is how an empty dataset gets trained on.
+    if not copied:
+        parser.error(
+            f"\nimported no images from {args.data_yaml}.\n"
+            + (
+                f"{unlabelled} image(s) were found but had no matching label file — "
+                "check the\nlabels directory sits beside images/ as YOLO expects.\n"
+                if unlabelled
+                else "No split in the descriptor pointed at a directory containing "
+                "images.\nRun scripts/inspect_dataset.py on the source to see its "
+                "real layout.\n"
+            )
+            + "No images or labels were written; the output directory is empty."
+        )
 
     data_yaml = write_data_yaml(args.out, vocabulary.classes)
     sources[prefix] = {
