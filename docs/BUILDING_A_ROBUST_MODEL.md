@@ -40,6 +40,38 @@ without overwriting each other, and `sources.json` records which source
 contributed what. That file is what lets a held-out facility be chosen
 deliberately rather than by accident.
 
+## The three datasets disagree, and it does not matter
+
+Merging sources merges their annotation schemes, and these three do not
+agree about two things:
+
+| the object | WaRP says | SortWaste says | ZeroWaste says |
+| --- | --- | --- | --- |
+| a beverage carton | `beverage carton` | `beverage carton` | `cardboard box` — no separate class |
+| a plastic tub | — | `plastic tub` | `plastic bottle` — no separate class |
+
+ZeroWaste has four classes and cannot express either distinction, so its
+17,751 cardboard instances include cartons and its 1,769 rigid-plastic
+instances include bottles, tubs and trays alike. Train on all three and the
+model is shown the same object under two names.
+
+**Expect class accuracy and mAP to suffer, and routing accuracy not to.**
+Both pairs share a destination in both shipped policies:
+
+```
+beverage carton vs cardboard box : Paper & Cardboard / Paper & Cardboard
+plastic bottle  vs plastic tub   : Rigid Plastic     / Rigid Plastic
+```
+
+This is the clearest case the project has produced for why routing accuracy
+is the headline number. A confusion that changes nothing about where an item
+goes is not an error worth paying to remove, and a metric that counts it as
+one will push toward the wrong model.
+
+Read a combined run accordingly: **compare routing accuracy across
+facilities**, and treat a class-accuracy drop against the WaRP-only model as
+the expected cost of a coarser source rather than a regression.
+
 ## What to add, in priority order
 
 The current model knows five classes, all rigid containers, from one plant.
