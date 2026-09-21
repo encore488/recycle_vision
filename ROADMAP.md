@@ -235,6 +235,33 @@ Still zero-shot: it has never seen a labelled conveyor belt. Milestone 4 is unch
 but its baseline is now much higher and its argument is different — training has to beat
 a good open-vocabulary model, not a bad closed-set one.
 
+### Measured: the WaRP model does not transfer
+
+| | mAP50 | routing accuracy | recall |
+| --- | --- | --- | --- |
+| WaRP → WaRP (same plant) | 0.671 | 96.1% | 56.7% |
+| WaRP → ZeroWaste (unseen plant) | **0.033** | **56.5%** | 6.3% |
+
+A 20× collapse. The model learned one conveyor belt, not waste. This cost
+twenty minutes against the two-day training run it replaced, and it settles
+the question the roadmap had been assuming an answer to.
+
+Two details worth keeping:
+
+- **Routing accuracy is 1.8× class accuracy** (56.5% vs 31.5%), and the
+  single largest confusion — `beverage carton` read as `cardboard box`, 42
+  times — is the documented ZeroWaste mapping conflict costing nothing. A
+  report quoting only mAP would have called that a failure.
+- `plastic bag` → `plastic bottle`, 30 times. WaRP contains no film at all,
+  so the model had never seen any. SortWaste and ZeroWaste bring 19,201
+  film instances between them.
+
+**WaRP is retired from training.** At 3.5 labelled objects per image in
+frames holding dozens, its unlabelled objects are background supervision —
+teaching the model that bottles on belts are nothing. It stays as evaluation
+data, where sparse annotation costs far less, and it remains the only source
+of glass.
+
 ## Milestone 4 — "It's credible ML"
 
 Separates "used a model" from "understands ML". Gated on real data.
