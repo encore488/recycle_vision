@@ -207,9 +207,18 @@ NMS- or model-specific. The usual causes, in order:
   macOS cuts sustained GPU clocks hard. Keep it on AC and hold it awake —
   without restarting the run, from a second terminal:
   ```bash
-  caffeinate -dimsu -w $(pgrep -f "train.py --data")
+  caffeinate -ims -w $(pgrep -f "train.py --data" | head -1)
   ```
-  That keeps the machine awake exactly as long as training lives.
+  `-w` waits on the training process, so the assertion lifts by itself when
+  the run ends. Deliberately no `-d` and no `-u`: those keep the *display*
+  awake, which for an overnight run only adds heat, and heat is what causes
+  the throttling in the first place. The screen may sleep; the machine will
+  not.
+
+  Two things `caffeinate` cannot do. It does not override clamshell sleep, so
+  **leave the lid open** — a closed lid on battery sleeps regardless. And
+  `-s` only applies on mains power, so **plug it in**; on battery macOS
+  throttles sustained GPU work whatever assertions are held.
 - **Memory pressure.** ~9.5GB of unified memory goes to the model at
   `--imgsz 960 --batch 8`. Once macOS starts swapping, everything degrades
   together. Check Activity Monitor → Memory → Memory Pressure; if it is not
