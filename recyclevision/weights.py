@@ -83,5 +83,11 @@ def resolve_weights(custom_path: str | Path | None = None) -> WeightsChoice:
         logger.info("using custom weights at %s", candidate)
         return WeightsChoice(path=str(candidate), is_custom=True)
 
+    if not candidate.parent.is_dir():
+        # Created rather than reported: the directory is gitignored, so a fresh
+        # clone has no models/, and `cp ... models/best_model.pt` then fails
+        # with a message naming the weights file rather than the folder.
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+
     logger.info("no custom weights at %s; falling back to %s", candidate, STOCK_WEIGHTS)
     return WeightsChoice(path=STOCK_WEIGHTS, is_custom=False)
