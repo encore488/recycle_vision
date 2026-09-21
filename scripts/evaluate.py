@@ -57,6 +57,83 @@ def annotation_density(data_yaml: Path) -> float | None:
     return instances / len(files)
 
 
+def labelled_instances(matrix, names: list[str]) -> int:
+    """Ground-truth instances in the holdout, including every one missed.
+
+    Ultralytics' matrix is [predicted][actual] with a trailing background row
+    and column. Summing a real class's *column* over every row -- background
+    included -- counts every labelled object of that class, whether a
+    prediction landed on it or not. That denominator is what turns routing
+    accuracy into a figure comparable across models.
+    """
+    size = len(names)
+    return sum(
+        int(matrix[predicted][actual]) for actual in range(size) for predicted in range(size + 1)
+    )
+
+
+def classes_present(data_yaml: Path, names: list[str]) -> list[str]:
+    """Class names the holdout's val labels actually contain.
+
+    A model can only be wrong about a class the stream can hold. WaRP has no
+    film at all, yet a pool-trained model predicted `plastic bag` for
+    `plastic bottle` 200 times -- a third of every instance it matched. The
+    same mechanism was measured on prompts earlier in this project
+    (docs/history/), where scoping the vocabulary to what the line can contain
+    took precision from 5.1% to 50%.
+
+    Deriving the list from the labels rather than asking for it typed keeps
+    the experiment one flag wide.
+    """
+    try:
+        root, _names = read_yolo_data_yaml(data_yaml)
+    except MappingError:
+        return []
+    labels = root / "labels" / "val"
+    if not labels.is_dir():
+        return []
+    seen: set[int] = set()
+    for path in labels.rglob("*.txt"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in text.splitlines():
+            fields = line.split()
+            if len(fields) < 5:
+                continue
+            try:
+                seen.add(int(fields[0]))
+            except ValueError:
+                continue
+    return [names[i] for i in sorted(seen) if 0 <= i < len(names)]
+
+
+def resolve_classes(requested: str | None, data: Path, names: list[str]) -> list[int] | None:
+    """Turn --classes into indices ultralytics can filter on, or explain why not."""
+    if requested is None:
+        return None
+    if requested == "present":
+        wanted = classes_present(data, names)
+        if not wanted:
+            raise SystemExit(
+                f"--classes present could not read any labels under {data}.\n"
+                "Name the classes instead: --classes 'plastic bottle,metal can'"
+            )
+    else:
+        wanted = [part.strip() for part in requested.split(",") if part.strip()]
+
+    unknown = [name for name in wanted if name not in names]
+    if unknown:
+        raise SystemExit(
+            "--classes names classes this model does not have: "
+            + ", ".join(repr(name) for name in unknown)
+            + "\nIt knows: "
+            + ", ".join(names)
+        )
+    return [names.index(name) for name in wanted]
+
+
 def _pairs_from_confusion(matrix, names: list[str]) -> list[tuple[str, str]]:
     """Expand a confusion matrix into (predicted, actual) pairs.
 
@@ -85,6 +162,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--imgsz", type=int, default=960)
+    parser.add_argument(
+        "--classes",
+        default=None,
+        help="restrict predictions to these class names, comma separated, or "
+        "'present' to use whatever the holdout's own labels contain. A class "
+        "the stream cannot hold is a pure false-positive source: scoping is "
+        "free accuracy and needs no retraining.",
+    )
     parser.add_argument("--device", default=None)
     args = parser.parse_args(argv)
 
@@ -107,7 +192,23 @@ def main(argv: list[str] | None = None) -> int:
     from ultralytics import YOLO
 
     model = YOLO(str(args.weights))
-    metrics = model.val(data=str(args.data), imgsz=args.imgsz, device=args.device, verbose=False)
+    names = list(model.names.values())
+    keep = resolve_classes(args.classes, args.data, names)
+    if keep is not None:
+        print(
+            f"\nscoped to {len(keep)} of {len(names)} class(es): "
+            + ", ".join(names[i] for i in keep)
+            + "\n  the rest cannot appear in this holdout, so any prediction of one"
+            "\n  could only ever be wrong."
+        )
+
+    metrics = model.val(
+        data=str(args.data),
+        imgsz=args.imgsz,
+        device=args.device,
+        classes=keep,
+        verbose=False,
+    )
 
     # How completely the holdout is annotated decides whether its precision
     # means anything. Measured on WaRP earlier in this project: 3.5 labelled
@@ -129,15 +230,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  precision  {metrics.box.mp:.3f}")
     print(f"  recall     {metrics.box.mr:.3f}")
 
-    names = list(model.names.values())
     pairs = _pairs_from_confusion(metrics.confusion_matrix.matrix, names)
     if not pairs:
         print("\nno matched instances — nothing to score for routing")
         return 0
 
     policy = RoutingPolicy.load(args.policy)
+    labelled = labelled_instances(metrics.confusion_matrix.matrix, names)
     print(f"\nrouting metrics ({policy.name})")
-    print(score_routing(pairs, policy).report())
+    print(score_routing(pairs, policy, labelled=labelled).report())
 
     # Routing accuracy is only a measurement when the classes under test can
     # reach more than one bin. They frequently cannot: an external dataset is

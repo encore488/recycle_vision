@@ -1,0 +1,259 @@
+> **Historical — superseded by [ROADMAP.md](../../ROADMAP.md).** This is the
+> milestone log as it stood on 2026-09-21, kept for its measurements. Every
+> number below was really run, and several of them cost days to obtain.
+>
+> It was retired as a *plan* because it had grown into a lab notebook: forty
+> unchecked boxes across four milestones, no definition of done, no ordering,
+> and nothing marked out of scope. The replacement is phase-based with gates
+> and a stopping rule.
+>
+> **Do cite its findings. Do not cite its plan.**
+>
+> One correction to apply when reading the numbers here: routing accuracy in
+> this document is computed over *matched* instances, so it rises and falls
+> with recall and is not comparable across models. See "The metric that nearly
+> reversed a decision" in the current roadmap.
+
+# Milestone log (to 2026-09-21)
+
+## Milestone 1 — "It runs, and it routes"  ✅ complete
+
+A stranger can clone it, run it, and get an explained bin decision.
+
+- [x] `recyclevision/` package: `Detector` protocol + `YoloDetector`, `RoutingPolicy`,
+      `SortingPipeline`, dataclass domain models.
+- [x] `policies/household.yaml` — 40 rules over 5 bins, with handling notes, certainty flags,
+      and explicit non-waste ignores.
+- [x] Model bootstrap: prefer `models/best_model.pt`; auto-download stock weights if absent;
+      banner clearly stating which model is live and what it cannot do.
+- [x] Bin-coloured annotation rendered in RGB via PIL — fixes the v0.2 BGR/RGB channel swap
+      by not round-tripping through `result.plot()` at all, and colours each box by
+      *destination* rather than by class. Label chips de-collide so crowded conveyor images
+      stay readable.
+- [x] Sidebar controls that actually do something (the v0.2 toggles were wired to nothing).
+- [x] `app.py` rewritten: bin cards, diversion and contamination rates, per-item
+      explanations, review queue, sample images so a visitor needs no photo of their own.
+- [x] Headless CLI (`python -m recyclevision`) with text and JSON output.
+- [x] 80-test suite driven through a stub detector — no weights, no network, no torch.
+- [x] `requirements.txt` rewritten as UTF-8 with direct dependencies only; `requirements-dev.txt`
+      split out; `packages.txt` for the Streamlit Cloud system libraries.
+- [x] `README.txt` → `README.md`, with a screenshot.
+- [x] GitHub Actions: ruff check, ruff format, pytest.
+- [x] **Deployed to Streamlit Community Cloud**, from `main`:
+      https://recyclevision-vfhgb8vencieb6ydhtzjcw.streamlit.app/
+
+> A live URL in the README is worth more than any single feature on this list.
+
+**Done when:** clean-machine clone runs, CI is green, README links a working hosted demo.
+
+### What running it revealed
+
+Verified end-to-end against the real sample images, which turned out to be the most
+useful thing in this milestone:
+
+- **Stock `yolov8n` is useless here** — zero detections at a sane threshold on the
+  conveyor photo. Switched the stock default to `yolov8s`, which finds six items in
+  ~70ms on CPU. `yolov8m` adds roughly one item for 2.3x the download.
+- **COCO has no class for a drink can.** On a belt full of steel cans, the model reports
+  "bowl", "cup" and "cutlery", and the policy dutifully routes them to landfill — wrongly.
+  This is the single most concrete argument for Milestone 4, and the app now says so on
+  every screen rather than reporting a confident wrong answer.
+- Default confidence lowered from 0.25 to 0.15 on that evidence.
+- **Grey "Landfill" boxes were invisible** against a dark conveyor belt, which read
+  as boxes being drawn on nothing. Every stroke now carries a dark halo, and displaced
+  label chips are tied back to their box with a leader line. An annotation that cannot
+  be trusted visually cannot be QA'd at all.
+
+### Measured baseline
+
+`recyclevision.qa` was built to grade detections tile by tile, and the first graded run
+(9 detections over the 2 sample images, `qa/verdicts.json`) gives:
+
+| Metric | Household policy | MRF policy |
+| --- | --- | --- |
+| Detection precision | 75% | 75% |
+| Routing accuracy (of real objects) | 33% | **83%** |
+| End-to-end correct | 25% | **62%** |
+
+Same model, same detections; only the policy file changed. Detection precision is
+identical because the detector is untouched — the gain is entirely from context.
+
+Remaining errors: two false positives on an empty belt seam (only a better detector
+fixes those), and a drinking glass the MRF policy sends to containers. Nine detections
+is a small sample and the MRF policy was written after seeing these images, so 83% is a
+ceiling, not an expectation. **Detection precision — 75% — is the number Milestone 4 has
+to beat, and no policy file can move it.**
+
+## Milestone 2 — "It's quantified"  ✅ complete
+
+- [x] **Diversion and contamination rates** as headline metrics, tracked across a session.
+- [x] **Impact accounting.** Mass and CO₂e avoided, from `impact/factors.yaml`.
+      The factors ship as **unverified placeholders** and the file's `verified: false`
+      flag propagates to a visible warning on every derived figure. The mechanism is
+      real; the constants are explicitly not. Replacing them with cited EPA WARM values
+      is a data change, not a code change.
+- [x] Per-detection table with bbox geometry; CSV and JSON export; batch mode over N
+      images with aggregate totals and stream composition.
+- [x] A second policy file (`mrf_conveyor.yaml`) to prove the abstraction holds, plus a
+      policy picker in the UI. Done early: QA showed context, not code, was the biggest
+      available accuracy win.
+- [x] Policy schema validation with helpful errors, so a hand-edited YAML fails loudly.
+- [ ] A real municipality's published rules as a third policy.
+
+## Milestone 3 — "It's real"
+
+The conveyor demo, and the centrepiece of the resume video.
+
+- [ ] **Video upload + object tracking.** `model.track(persist=True)` with ByteTrack, a virtual
+      count line, each item counted exactly once as it crosses. Roughly a day of work and the
+      highest impressiveness-per-hour item in this document.
+- [ ] Per-bin running tallies and throughput: items/minute, FPS, latency distribution.
+- [ ] Webcam / live stream input mode.
+- [ ] **Record the demo video.** Conveyor footage in, live bin tallies and contamination rate out.
+
+**Done when:** there is a 60-second video of material flowing past a count line with live
+per-bin tallies, good enough for a resume.
+
+## Milestone 3.5 — "It's open-vocabulary"  ✅ complete
+
+Unplanned, and it jumped the queue because QA said the detector was the bottleneck and
+this fixes most of it without a single labelled image.
+
+- [x] `vocab/waste_v1.yaml`: 19 waste-specific detection prompts, editable as config.
+- [x] `OpenVocabularyDetector` (YOLOE) behind the existing `Detector` protocol — the
+      pipeline, policies and UI needed no changes to accommodate it.
+- [x] Offline embedding build (`scripts/build_vocab_embeddings.py`), cached to 40KB so the
+      ~570MB text encoder is never needed at runtime. Verified: no clip/mobileclip module
+      is imported when serving.
+- [x] Open-vocabulary rules added to both policies. The MRF policy gains real
+      metal/plastic/glass bins, which were impossible when every container looked
+      like a "cup".
+- [x] Detector picker in the UI, COCO kept as the baseline.
+- [x] Recall added to the QA harness. It previously measured only precision, so a detector
+      that found one easy object per image would have scored perfectly.
+- [x] Annotations label the *item*, not the bin — nine chips reading "Mixed Recycling"
+      carried no information — plus a colour legend so a saved image explains itself.
+
+| Metric | COCO | Open vocab v1 | Open vocab v2 |
+| --- | --- | --- | --- |
+| Detection precision | 75% | 100% | **100%** |
+| Class accuracy | — | 62% | **85%** |
+| Routing accuracy | 33% | 92% | **100%** |
+
+Class accuracy was added after the repo owner pointed out that the annotated
+pictures were "badly mislabeled" — and they were. Routing accuracy forgives any
+mislabel that lands in the right bin, so v1's 92% concealed a 38% mislabel rate.
+Reporting the two separately is the only honest way to show it.
+
+**These were fitted numbers, not predictions** — the v2 vocabulary was tuned against
+these same two images, and both were household items photographed on a carpet.
+
+**Superseded.** The first real measurement arrived with WaRP below: 522 held-out
+images from an actual sorting plant, scored by a model that had never seen them.
+Keep these rows as the record of how the vocabulary was built; do not cite them as
+evidence. A belt model is not usefully judged on a living-room floor, and the
+sample images are being replaced with MRF imagery for the same reason.
+
+Still zero-shot: it has never seen a labelled conveyor belt. Milestone 4 is unchanged,
+but its baseline is now much higher and its argument is different — training has to beat
+a good open-vocabulary model, not a bad closed-set one.
+
+### Measured: the WaRP model does not transfer
+
+| | mAP50 | routing accuracy | recall |
+| --- | --- | --- | --- |
+| WaRP → WaRP (same plant) | 0.671 | 96.1% | 56.7% |
+| WaRP → ZeroWaste (unseen plant) | **0.033** | **56.5%** | 6.3% |
+
+A 20× collapse. The model learned one conveyor belt, not waste. This cost
+twenty minutes against the two-day training run it replaced, and it settles
+the question the roadmap had been assuming an answer to.
+
+Two details worth keeping:
+
+- **Routing accuracy is 1.8× class accuracy** (56.5% vs 31.5%), and the
+  single largest confusion — `beverage carton` read as `cardboard box`, 42
+  times — is the documented ZeroWaste mapping conflict costing nothing. A
+  report quoting only mAP would have called that a failure.
+- `plastic bag` → `plastic bottle`, 30 times. WaRP contains no film at all,
+  so the model had never seen any. SortWaste and ZeroWaste bring 19,201
+  film instances between them.
+
+**WaRP is retired from training.** At 3.5 labelled objects per image in
+frames holding dozens, its unlabelled objects are background supervision —
+teaching the model that bottles on belts are nothing. It stays as evaluation
+data, where sparse annotation costs far less, and it remains the only source
+of glass.
+
+## Milestone 4 — "It's credible ML"
+
+Separates "used a model" from "understands ML". Gated on real data.
+
+- [x] **Measured zero-shot on real conveyor data** (WaRP, 200 val images): 52.6% recall
+      at 56% fair precision, conf 0.01. The model finds these objects and ranks them
+      badly — a calibration problem, which is what supervised training fixes.
+- [x] **Fine-tuned on WaRP.** yolo11s, 960px, 63 epochs (best at 38, early-stopped),
+      18.6h on an M5 `mps`. **mAP50 0.671, mAP50-95 0.502, P 0.768, R 0.567.**
+
+      | class | instances | P | R | mAP50 |
+      | --- | --- | --- | --- | --- |
+      | plastic bottle | 1188 | 0.860 | 0.688 | 0.814 |
+      | glass bottle | 86 | 0.880 | 0.594 | 0.765 |
+      | cardboard box | 17 | 0.975 | 0.529 | 0.735 |
+      | metal can | 98 | 0.633 | 0.510 | 0.568 |
+      | beverage carton | 162 | 0.492 | 0.512 | 0.474 |
+
+      The calibration thesis held: zero-shot managed 0.9% recall at conf 0.25 and
+      needed conf 0.005 to reach 64%. This reaches 56.7% recall at 76.8% precision
+      without a pathological threshold, which was the stated success condition.
+
+      **Routing accuracy 96.1% against the MRF policy** (4 destinations across 5
+      classes), class accuracy 96.0%. Against the household policy it reads 100%,
+      which is meaningless there: every WaRP class routes to "Mixed Recycling", so
+      the metric cannot fail. `scripts/evaluate.py` now says which case it is in.
+
+      The confusions are almost all bin-changing here — carton↔bottle is fibre vs
+      plastic. Only 1 of 48 was harmless. That is the honest shape of the result:
+      on a sorting line these errors cost something, and the headline number is
+      96.1%, not 100%.
+- [ ] ~~Import SortWaste~~ (unobtainable; WaRP used instead). The first honest number this
+      project will have: everything scored so far rests on 2 clean photos, and the
+      vocabulary was tuned while looking at them. See [2026-09-data-plan.md](2026-09-data-plan.md).
+- [x] External-dataset import with class translation (`mappings/*.yaml`), refusing
+      unmapped classes rather than dropping them into the background.
+- [x] `scripts/zeroshot_eval.py` — score a vocabulary against labelled ground truth,
+      so prompt tuning is measured rather than guessed.
+- [ ] **Tune prompts against SortWaste's val split.** Cheapest lever available, but it
+      needs data the prompts have not seen — which is exactly what we have lacked.
+- [ ] **Capture own conveyor footage.** Still the thing that unlocks item-level
+      accuracy: no public dataset can express container glass vs drinking glass.
+- [ ] Use the open-vocabulary detector to *pre-label* that footage, then correct it by
+      hand. Far cheaper than labelling from scratch, and the QA harness is already the
+      correcting interface.
+- [x] QA harness (`recyclevision.qa`): per-detection contact sheets, a hand-gradable
+      verdict file, and scoring that separates detector failures from policy failures.
+      Pulled forward from this milestone because it was needed to evaluate v0.3 at all.
+- [ ] Dataset + data card: sourcing, label taxonomy, class balance, splits, known biases.
+      Public bootstraps: TACO, TrashNet, ZeroWaste.
+- [ ] Label taxonomy designed *backwards from the bins* — classes should be the distinctions
+      that change a routing decision, not an arbitrary material ontology.
+- [x] `train.py` with reproducible hyperparameters and logged runs.
+- [x] Frame extraction with near-duplicate rejection, and a train/val split by frame block
+      rather than at random — a random split of video frames leaks near-identical frames
+      across both sides and makes validation meaningless.
+- [x] Pre-labelling that emits **boxes and masks**, so no polygon is ever drawn by hand.
+      Iterative by design: `--weights` pre-labels the next batch with the model trained on
+      the last one.
+- [x] `docs/LABELLING.md` — frame counts, honest time estimates, and what is worth
+      correcting. **Estimated labelling time exceeds the 5-hour threshold for the naive
+      approach, so it opens with a checklist to re-check auto-labelling tooling first.**
+- [x] `docs/DATA_CARD.md` template.
+- [x] **Routing-aware evaluation** (`scripts/evaluate.py`): mAP alongside class accuracy
+      and routing accuracy, splitting confusions into those that changed a bin and those
+      that did not. A model that trades the second for the first looks better on mAP and
+      is worse in practice.
+- [ ] Evaluation *page* in the app: per-class PR curves, confusion matrix, latency.
+- [ ] Publish weights as a GitHub Release asset; bootstrap prefers them over stock.
+- [ ] **Active learning loop.** Correct a wrong route in the UI; write the corrected label to
+      `data/feedback/` in YOLO format. Feeds the dataset and makes a great interview story.
+

@@ -32,6 +32,9 @@ class RoutingScore:
     matched: int = 0
     class_correct: int = 0
     bin_correct: int = 0
+    #: Ground-truth instances the model was scored against, matched or not.
+    #: Zero means "not supplied", and the end-to-end figures are suppressed.
+    labelled: int = 0
     #: (predicted class, true class) -> count, for pairs that changed the bin.
     harmful_confusions: Counter = field(default_factory=Counter)
     #: (predicted class, true class) -> count, for pairs that did not.
@@ -50,12 +53,40 @@ class RoutingScore:
         """Class errors that did not change the destination."""
         return self.bin_correct - self.class_correct
 
+    @property
+    def match_recall(self) -> float:
+        """Share of labelled objects the detector found at all."""
+        return self.matched / self.labelled if self.labelled else 0.0
+
+    @property
+    def end_to_end_accuracy(self) -> float:
+        """Share of labelled objects that reached the right bin.
+
+        `routing_accuracy` divides by *matched* instances, so it rises when a
+        detector finds only the easy objects and falls when it starts finding
+        hard ones. Two models were compared on it across a 6x difference in
+        recall and the better one looked worse: 56.5% on the 6.3% of objects
+        it could find, against 42.0% on 38.5%. End to end those are 3.6% and
+        16.2%, which is the other way round and is the honest comparison.
+
+        So this is the number to quote across models. `routing_accuracy` still
+        answers a different and real question -- "when it finds something, does
+        it route it correctly" -- and is only comparable at equal recall.
+        """
+        return self.bin_correct / self.labelled if self.labelled else 0.0
+
     def report(self) -> str:
         lines = [
-            f"matched instances   {self.matched}",
+            f"matched instances   {self.matched}"
+            + (f" of {self.labelled} labelled ({self.match_recall:.1%})" if self.labelled else ""),
             f"class accuracy      {self.class_accuracy:.1%}",
-            f"routing accuracy    {self.routing_accuracy:.1%}",
+            f"routing accuracy    {self.routing_accuracy:.1%}  (of matched)",
         ]
+        if self.labelled:
+            lines.append(
+                f"routed correctly    {self.end_to_end_accuracy:.1%}  "
+                "(of ALL labelled — compare models on this)"
+            )
         if self.forgiven:
             lines.append(f"  ({self.forgiven} class error(s) landed in the right bin anyway)")
         if self.harmful_confusions:
@@ -186,14 +217,24 @@ def _bin_of(policy: RoutingPolicy, label: str) -> str | None:
     return routed.bin.key if routed else None
 
 
-def score_routing(pairs: list[tuple[str, str]], policy: RoutingPolicy) -> RoutingScore:
+def score_routing(
+    pairs: list[tuple[str, str]],
+    policy: RoutingPolicy,
+    labelled: int = 0,
+) -> RoutingScore:
     """Score (predicted class, true class) pairs on class *and* on destination.
 
     Pairs come from whatever matcher produced them -- ultralytics' own
     IoU matching, or a hand-graded file. This function only cares about the
     labels, which keeps it testable without a model.
+
+    `labelled` is the total number of ground-truth instances, including those
+    no prediction matched. Supply it and the score can report what share of
+    the *stream* was routed correctly; omit it and only the conditional
+    accuracies are available. See `RoutingScore.end_to_end_accuracy` for why
+    the difference decided a comparison.
     """
-    score = RoutingScore(matched=len(pairs))
+    score = RoutingScore(matched=len(pairs), labelled=labelled)
 
     for predicted, actual in pairs:
         if predicted == actual:

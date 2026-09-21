@@ -15,9 +15,15 @@ jam jar are both glass and go to different places. A lined paper cup and a
 sheet of paper are both paper and go to different places. So the model
 detects *items*, and a policy file maps items to bins per facility.
 
-That is why **routing accuracy is the headline metric, not mAP**. Confusing
-two classes that share a bin costs nothing; confusing two that do not
-contaminates a batch.
+That is why **routing is the headline metric, not mAP**. Confusing two
+classes that share a bin costs nothing; confusing two that do not contaminates
+a batch.
+
+**But use the end-to-end figure, not the conditional one.** Routing accuracy
+over *matched* instances rises when a detector finds only easy objects and
+falls when it starts finding hard ones, so it is not comparable across models
+at different recall. `scripts/evaluate.py` reports `routed correctly` over all
+labelled instances beside it. Trap 9 below is what happens when you forget.
 
 ## Where things are
 
@@ -111,6 +117,18 @@ guards.
 8. **An import that writes nothing, or only some splits, is a failure.**
    Both are refused now. A half-imported dataset trains fine and teaches
    the wrong thing.
+9. **Routing accuracy conditioned on matched instances is not comparable
+   across models.** The pool model scored 42.0% against the WaRP model's
+   56.5% and looked like a regression; it had matched 38.5% of labelled
+   objects against 6.3%, so end-to-end it routed 16.2% of the stream
+   correctly against ~3.6% — about 4.5× better, reported as worse. Quote
+   `routed correctly`.
+10. **A class the holdout cannot contain is a pure false-positive source.**
+   The pool model predicted `plastic bag` for `plastic bottle` 200 times — a
+   third of every matched instance — on WaRP, which contains no film at all.
+   Same mechanism as the open-vocabulary phantom prompts, now in a trained
+   model. `scripts/evaluate.py --classes present` scopes to whatever the
+   holdout actually labels.
 
 ## Working conventions
 
@@ -147,11 +165,30 @@ linearly.
 
 ## In flight
 
-A model is training on the balanced SortWaste + ZeroWaste pool (3,000 train,
-500 val, 40 epochs, ~8.5h). **The number to beat is 56.5% routing accuracy on
-WaRP**, which was never trained on and is a genuine third-facility holdout.
+The balanced SortWaste + ZeroWaste pool model is **trained and scored**
+(`runs/detect/conveyor_20260921_023058`). On WaRP, a third facility it never
+saw: mAP50 0.071, 38.5% matched, 42.0% routing accuracy of matched, and
+**16.2% routed correctly end to end** against the WaRP model's ~3.6%.
 
-One confound to state whenever that number is quoted: WaRP has 534 glass
+Better, and not good. The work now is [ROADMAP.md](ROADMAP.md) Phase 1, which
+is **time-boxed to four training runs** — the previous session had no exit
+condition and drifted when the run plateaued. Ordered cheapest first:
+
+1. `--classes present` — scope predictions to what the holdout can hold. No
+   retraining. `plastic bag` for `plastic bottle` ×200 is the single largest
+   error and WaRP has no film.
+2. Merge the classes the sources contradict each other on (`beverage
+   carton`/`cardboard box`, `plastic bottle`/`plastic tub`). Approved; costs
+   no routing accuracy. Check `train/cls_loss` against `train/box_loss` first.
+3. ZeroWaste's 5.9 objects/image against SortWaste's 16.6 — the WaRP density
+   trap, possibly recurring at a third of the pool.
+4. Data volume: 3,000 train images of ~8,700 available.
+
+Two decisions are settled (2026-09-21): **ZeroWaste stays** and v1.0 weights
+ship as non-commercial research artifacts, and the **training taxonomy merges**
+where the sources disagree.
+
+One confound to state whenever a WaRP number is quoted: WaRP has 534 glass
 instances and neither training source has any glass at all, so ~5% of its
 instances are unreachable by construction.
 

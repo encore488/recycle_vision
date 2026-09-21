@@ -10,8 +10,9 @@ robotic sorting.
 
 ![RecycleVision AI](docs/screenshot.png)
 
-> **Status:** v0.3, early but working. Runs on stock COCO weights while a
-> waste-specific model is trained — see [ROADMAP.md](ROADMAP.md).
+> **Status:** v0.8, working and deployed. Ships two detectors and two
+> routing policies, measured against held-out sorting-plant data. The road to
+> v1.0 — and what is deliberately *not* in it — is [ROADMAP.md](ROADMAP.md).
 
 > Working on this repo? **[CLAUDE.md](CLAUDE.md)** is the orientation:
 > current measurements, settled decisions, and the traps that have
@@ -39,17 +40,21 @@ The project ships two, and measures both. The difference is the whole story:
 
 | | Stock COCO | Open vocabulary |
 | --- | --- | --- |
-| Model | YOLOv8s | YOLOE + `vocab/waste_v1.yaml` |
+| Model | YOLOv8s | YOLOE + `vocab/waste_v2.yaml` |
 | Class list | Fixed at training time, 80 everyday objects | Given in words, editable in a YAML file |
-| A steel can | "bowl" or "cup" | "steel food can" |
-| Detection precision | 75% | **100%** |
-| Routing accuracy | 33% | **92%** |
+| A steel can | "bowl" or "cup" | "metal can" |
+| A drink carton | no such class | "beverage carton" |
+
+This table used to carry accuracy figures. They were measured on two
+photographs that the vocabulary had been tuned against, so they described a
+fit rather than a performance, and they are retired. **The honest numbers are
+below, on held-out sorting-plant data.**
 
 COCO has no class for a drink can — the most common item in a recycling stream —
 so a COCO detector reports one as tableware and no downstream rule can undo
 that. An open-vocabulary detector is told what to look for in words, so the
-class list becomes configuration. `vocab/waste_v1.yaml` simply asks for
-`aluminum drink can`.
+class list becomes configuration. `vocab/waste_v2.yaml` simply asks for
+`metal can`.
 
 Turning those words into embeddings needs a text encoder ten times the size of
 the detector, so that happens once, offline, and the 40KB result is committed.
@@ -59,7 +64,7 @@ the app deployable on a small host.
 ```bash
 # Only when the vocabulary changes:
 pip install -r requirements-vocab.txt
-python scripts/build_vocab_embeddings.py vocab/waste_v1.yaml
+python scripts/build_vocab_embeddings.py vocab/waste_v2.yaml
 ```
 
 ## How it works
@@ -210,14 +215,37 @@ tuned against them, so they measured a fit, not a performance.
 
 **A detector fine-tuned on WaRP** (2,974 images from one plant):
 
-| tested on | mAP50 | class acc | routing acc | recall |
+| tested on | mAP50 | class acc | routing acc (of matched) | recall |
 | --- | --- | --- | --- | --- |
 | WaRP val — the same plant | 0.671 | 96.0% | 96.1% | 56.7% |
-| ZeroWaste — a plant it has never seen | 0.033 | 31.5% | **56.5%** | 6.3% |
+| ZeroWaste — a plant it has never seen | 0.033 | 31.5% | 56.5% | 6.3% |
 
 **Read the second row.** 96% on the plant it trained on, 56% on a plant it did
 not: it learned one conveyor belt rather than waste. Generalisation is the
 open problem, and a single-facility number is not evidence about it.
+
+**A detector trained on a SortWaste + ZeroWaste pool**, scored on WaRP — a
+third facility it never saw:
+
+| | mAP50 | class acc | routing acc (of matched) | recall |
+| --- | --- | --- | --- | --- |
+| WaRP — a plant it has never seen | 0.071 | 32.7% | 42.0% | 38.5% |
+
+**Those two cross-facility rows cannot be compared as they stand**, and the
+reason matters more than either number. Routing accuracy is computed over
+*matched* instances, so it flatters a model that finds only easy objects. The
+pool model matched 38.5% of labelled objects where the WaRP model matched
+6.3%. Over the whole stream:
+
+| model, on an unseen plant | routed correctly, of **all** labelled objects |
+| --- | --- |
+| trained on WaRP | ~3.6% |
+| trained on the pool | **16.2%** |
+
+Roughly 4.5× better, from the model the headline metric called worse.
+`scripts/evaluate.py` now reports this end-to-end figure beside the
+conditional one and says which denominator each uses. **Compare models on the
+end-to-end number.**
 
 **Routing accuracy is 1.8× class accuracy on the unseen plant** (56.5% vs
 31.5%), and the single largest confusion there — `beverage carton` read as
@@ -434,9 +462,13 @@ Python · Streamlit · Ultralytics YOLO · PyTorch · Pillow
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). Next up: session metrics and impact accounting,
-then video with object tracking and a virtual count line — the conveyor-belt
-demo this is all building towards.
+See [ROADMAP.md](ROADMAP.md), which is organised as phases with gates and an
+explicit list of what v1.0 does *not* include.
+
+Next up: video with object tracking and a virtual count line — the
+conveyor-belt demo this is all building towards. It is deliberately **not**
+gated on the detector improving, because the detector is a swappable component
+and v1.0 should not be hostage to data we may never obtain.
 
 ## License
 
