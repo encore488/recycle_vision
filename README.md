@@ -13,6 +13,10 @@ robotic sorting.
 > **Status:** v0.3, early but working. Runs on stock COCO weights while a
 > waste-specific model is trained — see [ROADMAP.md](ROADMAP.md).
 
+> Working on this repo? **[CLAUDE.md](CLAUDE.md)** is the orientation:
+> current measurements, settled decisions, and the traps that have
+> already cost time.
+
 ## Bins, not materials
 
 Most waste classifiers tell you what something is made of. That is the wrong
@@ -200,38 +204,37 @@ Verdicts separate the two failure modes, because they have different fixes:
 
 ### Current scores
 
-Graded by hand over the two sample images (`qa/*/verdicts.json`):
+Measured on held-out splits of real sorting-plant data. The two development
+photographs these numbers used to come from are retired — the vocabulary was
+tuned against them, so they measured a fit, not a performance.
 
-| | COCO | Open vocab v1 | **Open vocab v2** |
-| --- | --- | --- | --- |
-| Detections | 9 | 14 | 15 |
-| Detection precision | 75% | 100% | **100%** |
-| Class accuracy | — | 62% | **85%** |
-| Routing accuracy | 33% | 92% | **100%** |
+**A detector fine-tuned on WaRP** (2,974 images from one plant):
 
-**Read class accuracy before routing accuracy.** Routing accuracy flatters the
-model badly: it forgives every mislabel that happens to land in the right bin,
-and on v1 that was most of them. v1 scored 92% routing while naming 38% of
-objects wrongly — a steel can called "aluminum drink can", a plastic bottle
-called a can. The pictures looked wrong because they *were* wrong; the headline
-number hid it. Class accuracy was added to the harness specifically to stop
-that.
+| tested on | mAP50 | class acc | routing acc | recall |
+| --- | --- | --- | --- | --- |
+| WaRP val — the same plant | 0.671 | 96.0% | 96.1% | 56.7% |
+| ZeroWaste — a plant it has never seen | 0.033 | 31.5% | **56.5%** | 6.3% |
 
-#### ⚠️ These numbers are fitted, not predicted
+**Read the second row.** 96% on the plant it trained on, 56% on a plant it did
+not: it learned one conveyor belt rather than waste. Generalisation is the
+open problem, and a single-facility number is not evidence about it.
 
-The v2 vocabulary was tuned *against these two images*: prompts were added,
-reworded and deleted based on what they scored here. That is overfitting by
-construction, and 15 detections over 2 images is a tiny sample. **Treat these
-as "the mechanism works", not as an accuracy estimate.** The first honest
-measurement will be the first image the vocabulary has not seen.
+**Routing accuracy is 1.8× class accuracy on the unseen plant** (56.5% vs
+31.5%), and the single largest confusion there — `beverage carton` read as
+`cardboard box`, 42 times — is a known disagreement between the two datasets'
+annotation schemes. Both route to fibre, so it costs nothing. A report
+quoting only mAP would have called that a failure.
 
-What is still wrong, on the images it *was* fitted to:
+**Zero-shot, before any training**, on the same WaRP split: 52.6% recall at
+56% fair precision — but only at confidence 0.01, collapsing to 0.9% at 0.25.
+The objects were always being found and ranked terribly. Training fixed the
+ranking, not the eyes.
 
-- A clear plastic water bottle is called a metal can, and a can end is called a
-  bottle cap. Both are mislabels that route correctly, which is the best kind
-  of error to have left.
-- Two small fragments on the belt are graded `unsure` — too small to identify
-  from the image at all.
+On precision: WaRP labels 3.5 objects per image in frames holding dozens, so
+a correct detection of an unlabelled object scores as an error. True precision
+there lies between the raw figure and a "fair" one counting false positives
+only for classes the dataset actually labels. `scripts/zeroshot_eval.py`
+reports both bounds rather than picking the flattering one.
 
 ## How the vocabulary is designed
 
@@ -375,10 +378,16 @@ Silicon's `mps`, then CPU. For a free hosted T4 see
 
 ### Docs
 
-- **[docs/DATA_PLAN.md](docs/DATA_PLAN.md)** — what to train on and in what order
-- **[docs/TRAINING_ON_GPU.md](docs/TRAINING_ON_GPU.md)** — Colab and Kaggle walkthroughs
-- **[docs/LABELLING.md](docs/LABELLING.md)** — how many frames, how long, what to correct
-- **[docs/DATA_CARD.md](docs/DATA_CARD.md)** — template, fill in as you go
+| file | what it is for |
+| --- | --- |
+| [CLAUDE.md](CLAUDE.md) | **Start here.** Current state, settled decisions, known traps |
+| [ROADMAP.md](ROADMAP.md) | Milestones, what is done, what is measured |
+| [docs/BUILDING_A_ROBUST_MODEL.md](docs/BUILDING_A_ROBUST_MODEL.md) | Combining datasets, choosing a holdout, what to add next |
+| [docs/TRAINING_ON_GPU.md](docs/TRAINING_ON_GPU.md) | mps, Colab, Kaggle, and the failure modes of each |
+| [docs/LABELLING.md](docs/LABELLING.md) | Annotating your own footage, and the bootstrap loop |
+| [docs/DATA_CARD.md](docs/DATA_CARD.md) | What each dataset contains, and its licence |
+| [docs/DATA_CARD_TEMPLATE.md](docs/DATA_CARD_TEMPLATE.md) | Blank card to fill in for your own footage |
+| [docs/history/](docs/history/) | Superseded plans, kept for their findings |
 
 ## Development
 

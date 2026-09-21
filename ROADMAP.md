@@ -295,7 +295,7 @@ Separates "used a model" from "understands ML". Gated on real data.
       96.1%, not 100%.
 - [ ] ~~Import SortWaste~~ (unobtainable; WaRP used instead). The first honest number this
       project will have: everything scored so far rests on 2 clean photos, and the
-      vocabulary was tuned while looking at them. See [docs/DATA_PLAN.md](docs/DATA_PLAN.md).
+      vocabulary was tuned while looking at them. See [docs/history/2026-09-data-plan.md](docs/history/2026-09-data-plan.md).
 - [x] External-dataset import with class translation (`mappings/*.yaml`), refusing
       unmapped classes rather than dropping them into the background.
 - [x] `scripts/zeroshot_eval.py` — score a vocabulary against labelled ground truth,

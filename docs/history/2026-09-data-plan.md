@@ -1,3 +1,16 @@
+> **Historical — superseded.** Written before any dataset had been obtained,
+> when the plan was still "which data can we get, and can the sandbox reach
+> it?". Both questions are now answered: three datasets are imported, and the
+> answers changed the plan.
+>
+> **For current guidance see [CLAUDE.md](../../CLAUDE.md) and
+> [BUILDING_A_ROBUST_MODEL.md](../BUILDING_A_ROBUST_MODEL.md).**
+>
+> Kept because the investigation it records is worth being able to check: the
+> WaRP zero-shot runs, the two hypotheses tested (one wrong), and the
+> discovery that raw precision on a sparsely-annotated dataset cannot be
+> measured at all. Do not cite its plan; do cite its findings.
+
 # Data plan
 
 What to train on, in what order, and why.
