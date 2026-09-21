@@ -98,23 +98,38 @@ RUNS_ROOT = PROJECT_ROOT / "runs"
 
 
 def latest_trained_weights() -> Path | None:
-    """The most recently written best.pt, across every run.
+    """The most recently written best.pt, wherever it lives.
 
-    Typing a run path by hand is a small, constant source of error: the
-    directory is timestamped, easy to mistype, and easy to quote wrongly in
-    instructions. Nothing about "score the model I just trained" requires
+    Typing a timestamped run path by hand is a constant small source of
+    error, and nothing about "score the model I just trained" requires
     knowing it.
 
-    Prefers models/best_model.pt when it exists, since putting weights there
-    is the deliberate act of naming a current model.
+    Strictly newest-first, models/best_model.pt included. An earlier version
+    preferred models/ unconditionally, reasoning that putting weights there
+    is the deliberate act of naming a current model. That is true the day you
+    do it and false a week later: a model copied there in one session
+    silently shadowed every run afterwards, and an evaluation meant to score
+    a fresh run re-scored the old one instead — returning plausible numbers
+    identical to the previous week's, which is the worst way for it to fail.
     """
+    candidates = []
     if CUSTOM_WEIGHTS.is_file():
-        return CUSTOM_WEIGHTS
-    if not RUNS_ROOT.is_dir():
+        candidates.append(CUSTOM_WEIGHTS)
+    if RUNS_ROOT.is_dir():
+        candidates += [p for p in RUNS_ROOT.glob("*/*/weights/best.pt") if p.is_file()]
+    if not candidates:
         return None
-    found = sorted(
-        RUNS_ROOT.glob("*/*/weights/best.pt"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    return found[0] if found else None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def shadowed_by(chosen: Path) -> list[Path]:
+    """Other trained weights older than the one chosen, for reporting.
+
+    Silence here is what let a stale model be scored as a fresh one.
+    """
+    others = []
+    if CUSTOM_WEIGHTS.is_file() and chosen != CUSTOM_WEIGHTS:
+        others.append(CUSTOM_WEIGHTS)
+    if RUNS_ROOT.is_dir():
+        others += [p for p in RUNS_ROOT.glob("*/*/weights/best.pt") if p.is_file() and p != chosen]
+    return sorted(others, key=lambda path: path.stat().st_mtime, reverse=True)

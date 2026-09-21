@@ -214,13 +214,48 @@ class TestLatestTrainedWeights:
 
         assert weights_module.latest_trained_weights().parent.parent.name == "new_run"
 
-    def test_a_named_model_beats_any_run(self, tmp_path, monkeypatch):
-        # Putting weights in models/ is a deliberate act; it should win.
+    def test_a_stale_named_model_does_not_shadow_a_newer_run(self, tmp_path, monkeypatch):
+        """The failure this replaced.
+
+        models/best_model.pt used to win unconditionally, on the reasoning
+        that putting weights there deliberately names a current model. True
+        the day you do it; false a week later. A WaRP model copied there in
+        one session shadowed every run afterwards, and an evaluation meant to
+        score a fresh pool run re-scored the old one — returning numbers
+        identical to the previous week's, which is the worst way to fail.
+        """
+        import os
+        import time
+
         from recyclevision import weights as weights_module
 
-        runs = tmp_path / "runs" / "detect" / "r" / "weights"
-        runs.mkdir(parents=True)
-        (runs / "best.pt").write_bytes(b"x")
+        named = tmp_path / "models" / "best_model.pt"
+        named.parent.mkdir(parents=True)
+        named.write_bytes(b"x")
+        os.utime(named, (time.time() - 9999,) * 2)
+
+        run = tmp_path / "runs" / "detect" / "fresh" / "weights"
+        run.mkdir(parents=True)
+        (run / "best.pt").write_bytes(b"x")
+
+        monkeypatch.setattr(weights_module, "RUNS_ROOT", tmp_path / "runs")
+        monkeypatch.setattr(weights_module, "CUSTOM_WEIGHTS", named)
+
+        chosen = weights_module.latest_trained_weights()
+        assert chosen == run / "best.pt"
+        assert named in weights_module.shadowed_by(chosen), "the loser must be reportable"
+
+    def test_a_freshly_named_model_still_wins(self, tmp_path, monkeypatch):
+        import os
+        import time
+
+        from recyclevision import weights as weights_module
+
+        run = tmp_path / "runs" / "detect" / "old" / "weights"
+        run.mkdir(parents=True)
+        (run / "best.pt").write_bytes(b"x")
+        os.utime(run / "best.pt", (time.time() - 9999,) * 2)
+
         named = tmp_path / "models" / "best_model.pt"
         named.parent.mkdir(parents=True)
         named.write_bytes(b"x")

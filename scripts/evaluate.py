@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from recyclevision.evaluate import destinations_reachable, score_routing  # noqa: E402
 from recyclevision.pipeline import DEFAULT_POLICY  # noqa: E402
 from recyclevision.policy import RoutingPolicy  # noqa: E402
-from recyclevision.weights import latest_trained_weights  # noqa: E402
+from recyclevision.weights import latest_trained_weights, shadowed_by  # noqa: E402
 
 
 def _pairs_from_confusion(matrix, names: list[str]) -> list[tuple[str, str]]:
@@ -66,7 +66,9 @@ def main(argv: list[str] | None = None) -> int:
                 "Train one first, or pass --weights explicitly:\n"
                 "  python train.py --data <a dataset>/data.yaml"
             )
-        print(f"using {args.weights}")
+        print(f"using {args.weights}  (newest of {len(shadowed_by(args.weights)) + 1})")
+        for other in shadowed_by(args.weights)[:3]:
+            print(f"  not: {other}")
 
     for path in (args.weights, args.data):
         if not path.is_file():
