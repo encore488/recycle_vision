@@ -91,3 +91,30 @@ def resolve_weights(custom_path: str | Path | None = None) -> WeightsChoice:
 
     logger.info("no custom weights at %s; falling back to %s", candidate, STOCK_WEIGHTS)
     return WeightsChoice(path=STOCK_WEIGHTS, is_custom=False)
+
+
+#: Where ultralytics writes runs. Searched newest-first when no weights are named.
+RUNS_ROOT = PROJECT_ROOT / "runs"
+
+
+def latest_trained_weights() -> Path | None:
+    """The most recently written best.pt, across every run.
+
+    Typing a run path by hand is a small, constant source of error: the
+    directory is timestamped, easy to mistype, and easy to quote wrongly in
+    instructions. Nothing about "score the model I just trained" requires
+    knowing it.
+
+    Prefers models/best_model.pt when it exists, since putting weights there
+    is the deliberate act of naming a current model.
+    """
+    if CUSTOM_WEIGHTS.is_file():
+        return CUSTOM_WEIGHTS
+    if not RUNS_ROOT.is_dir():
+        return None
+    found = sorted(
+        RUNS_ROOT.glob("*/*/weights/best.pt"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return found[0] if found else None

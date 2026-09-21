@@ -187,3 +187,59 @@ class TestWeightsSelection:
         body = ast.unparse(loader)
         assert "STOCK_WEIGHTS" in body, "the baseline must name stock weights explicitly"
         assert "YoloDetector()" not in body, "a bare YoloDetector() resolves to custom weights"
+
+
+class TestLatestTrainedWeights:
+    """Resolving weights so a timestamped run directory never has to be typed.
+
+    Not a convenience: a hand-typed run path is a constant small source of
+    error, and instructions that contain a placeholder for it break when
+    pasted into a shell.
+    """
+
+    def test_the_newest_run_wins(self, tmp_path, monkeypatch):
+        import os
+        import time
+
+        from recyclevision import weights as weights_module
+
+        monkeypatch.setattr(weights_module, "RUNS_ROOT", tmp_path / "runs")
+        monkeypatch.setattr(weights_module, "CUSTOM_WEIGHTS", tmp_path / "models" / "absent.pt")
+        for name, age in (("old_run", 500), ("new_run", 10)):
+            folder = tmp_path / "runs" / "detect" / name / "weights"
+            folder.mkdir(parents=True)
+            best = folder / "best.pt"
+            best.write_bytes(b"x")
+            os.utime(best, (time.time() - age, time.time() - age))
+
+        assert weights_module.latest_trained_weights().parent.parent.name == "new_run"
+
+    def test_a_named_model_beats_any_run(self, tmp_path, monkeypatch):
+        # Putting weights in models/ is a deliberate act; it should win.
+        from recyclevision import weights as weights_module
+
+        runs = tmp_path / "runs" / "detect" / "r" / "weights"
+        runs.mkdir(parents=True)
+        (runs / "best.pt").write_bytes(b"x")
+        named = tmp_path / "models" / "best_model.pt"
+        named.parent.mkdir(parents=True)
+        named.write_bytes(b"x")
+
+        monkeypatch.setattr(weights_module, "RUNS_ROOT", tmp_path / "runs")
+        monkeypatch.setattr(weights_module, "CUSTOM_WEIGHTS", named)
+        assert weights_module.latest_trained_weights() == named
+
+    def test_nothing_trained_resolves_to_nothing(self, tmp_path, monkeypatch):
+        from recyclevision import weights as weights_module
+
+        monkeypatch.setattr(weights_module, "RUNS_ROOT", tmp_path / "runs")
+        monkeypatch.setattr(weights_module, "CUSTOM_WEIGHTS", tmp_path / "absent.pt")
+        assert weights_module.latest_trained_weights() is None
+
+    def test_a_runs_directory_with_no_weights_resolves_to_nothing(self, tmp_path, monkeypatch):
+        from recyclevision import weights as weights_module
+
+        (tmp_path / "runs" / "detect" / "r").mkdir(parents=True)
+        monkeypatch.setattr(weights_module, "RUNS_ROOT", tmp_path / "runs")
+        monkeypatch.setattr(weights_module, "CUSTOM_WEIGHTS", tmp_path / "absent.pt")
+        assert weights_module.latest_trained_weights() is None

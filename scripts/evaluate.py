@@ -1,6 +1,9 @@
 """Score a trained model on classes and on destinations.
 
-    python scripts/evaluate.py --weights runs/.../best.pt --data datasets/conveyor/data.yaml
+    python scripts/evaluate.py --data datasets/conveyor/data.yaml
+
+Weights default to models/best_model.pt, or the newest run's best.pt, so a
+timestamped run directory never has to be typed.
 
 Reports ultralytics' own detection metrics, and then the number this project
 actually cares about: how often a prediction reaches the right bin. Those come
@@ -21,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from recyclevision.evaluate import destinations_reachable, score_routing  # noqa: E402
 from recyclevision.pipeline import DEFAULT_POLICY  # noqa: E402
 from recyclevision.policy import RoutingPolicy  # noqa: E402
+from recyclevision.weights import latest_trained_weights  # noqa: E402
 
 
 def _pairs_from_confusion(matrix, names: list[str]) -> list[tuple[str, str]]:
@@ -42,12 +46,27 @@ def _pairs_from_confusion(matrix, names: list[str]) -> list[tuple[str, str]]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--weights", type=Path, required=True)
+    parser.add_argument(
+        "--weights",
+        type=Path,
+        default=None,
+        help="defaults to models/best_model.pt, or the most recent run's best.pt",
+    )
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--imgsz", type=int, default=960)
     parser.add_argument("--device", default=None)
     args = parser.parse_args(argv)
+
+    if args.weights is None:
+        args.weights = latest_trained_weights()
+        if args.weights is None:
+            parser.error(
+                "no weights given and none found.\n"
+                "Train one first, or pass --weights explicitly:\n"
+                "  python train.py --data <a dataset>/data.yaml"
+            )
+        print(f"using {args.weights}")
 
     for path in (args.weights, args.data):
         if not path.is_file():
