@@ -22,9 +22,39 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from recyclevision.evaluate import destinations_reachable, score_routing  # noqa: E402
+from recyclevision.external import MappingError, read_yolo_data_yaml  # noqa: E402
 from recyclevision.pipeline import DEFAULT_POLICY  # noqa: E402
 from recyclevision.policy import RoutingPolicy  # noqa: E402
 from recyclevision.weights import latest_trained_weights, shadowed_by  # noqa: E402
+
+#: Below this many labelled objects per image, a dataset's own annotation
+#: policy dominates precision. SortWaste sits at 16.6, ZeroWaste 5.9, WaRP 3.5.
+SPARSE_BELOW = 5.0
+
+
+def annotation_density(data_yaml: Path) -> float | None:
+    """Labelled objects per image in a dataset's val split, or None."""
+    try:
+        root, _names = read_yolo_data_yaml(data_yaml)
+    except MappingError:
+        return None
+    labels = root / "labels" / "val"
+    if not labels.is_dir():
+        return None
+    files = list(labels.rglob("*.txt"))
+    if not files:
+        return None
+    instances = 0
+    for path in files:
+        try:
+            instances += sum(
+                1
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if len(line.split()) >= 5
+            )
+        except (OSError, UnicodeDecodeError):
+            continue
+    return instances / len(files)
 
 
 def _pairs_from_confusion(matrix, names: list[str]) -> list[tuple[str, str]]:
@@ -78,6 +108,20 @@ def main(argv: list[str] | None = None) -> int:
 
     model = YOLO(str(args.weights))
     metrics = model.val(data=str(args.data), imgsz=args.imgsz, device=args.device, verbose=False)
+
+    # How completely the holdout is annotated decides whether its precision
+    # means anything. Measured on WaRP earlier in this project: 3.5 labelled
+    # objects per image in frames holding dozens, and true precision provably
+    # somewhere between a raw 4.1% and a fair 56.0%. A model scored there can
+    # be penalised for finding objects the dataset simply never labelled.
+    density = annotation_density(args.data)
+    if density is not None and density < SPARSE_BELOW:
+        print(
+            f"\n⚠️ this holdout labels {density:.1f} object(s) per image.\n"
+            "   Correct detections of unlabelled objects score as false positives,\n"
+            "   so precision and mAP below are LOWER BOUNDS, not measurements.\n"
+            "   Read recall and routing accuracy; treat precision as uninterpretable."
+        )
 
     print("\ndetection metrics")
     print(f"  mAP50      {metrics.box.map50:.3f}")
