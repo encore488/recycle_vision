@@ -128,3 +128,40 @@ class TestSplitLayouts:
             encoding="utf-8",
         )
         assert read_split_images_dir(descriptor, "test") == tmp_path / "test" / "images"
+
+
+class TestSourceSplitTag:
+    """Two splits of one dataset can share a filename. ZeroWaste's val and
+    test share two frame names, and both land in this project's single `val`.
+    Without the source split in the output name the second silently
+    overwrites the first, and the only trace is an image count two lower than
+    the sum of the parts — which is exactly how it was found.
+    """
+
+    def test_a_split_directory_above_the_file_is_used(self):
+        # ZeroWaste: <split>/labels.json
+        assert import_dataset.source_split_tag(Path("/d/zerowaste-f/val/labels.json"), "x") == "val"
+
+    def test_a_split_two_levels_up_is_used(self):
+        # SortWaste: <split>/annotations/<split>_coco.json
+        path = Path("/d/sortwaste/splited_all_dataset/test/annotations/test_coco.json")
+        assert import_dataset.source_split_tag(path, "x") == "test"
+
+    def test_the_nearest_split_directory_wins(self):
+        path = Path("/d/train/inner/val/labels.json")
+        assert import_dataset.source_split_tag(path, "x") == "val"
+
+    def test_valid_counts_as_a_split_name(self):
+        assert import_dataset.source_split_tag(Path("/d/valid/labels.json"), "x") == "valid"
+
+    def test_the_fallback_is_used_when_nothing_looks_like_a_split(self):
+        assert import_dataset.source_split_tag(Path("/d/whatever/labels.json"), "val") == "val"
+
+    def test_case_is_ignored(self):
+        assert import_dataset.source_split_tag(Path("/d/TEST/labels.json"), "x") == "test"
+
+    def test_two_splits_produce_different_tags(self):
+        # The property that prevents the overwrite.
+        a = import_dataset.source_split_tag(Path("/d/val/labels.json"), "val")
+        b = import_dataset.source_split_tag(Path("/d/test/labels.json"), "val")
+        assert a != b

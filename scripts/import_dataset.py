@@ -47,6 +47,28 @@ from recyclevision.vocabulary import DEFAULT_VOCAB, Vocabulary  # noqa: E402
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
+SPLIT_NAMES = {"train", "val", "valid", "test"}
+
+
+def source_split_tag(path: Path, fallback: str) -> str:
+    """Which source split a file belongs to, from where it sits on disk.
+
+    Two splits of one dataset can hold the same filename -- ZeroWaste's val
+    and test share two frame names -- and both land in this project's single
+    `val`. Without the source split in the output name the second overwrites
+    the first, and the only trace is an image count two lower than the sum of
+    the parts.
+
+    SortWaste keeps its COCO at <split>/annotations/x.json, ZeroWaste at
+    <split>/labels.json, so walking up for a split-shaped directory covers
+    both.
+    """
+    for parent in path.parents:
+        if parent.name.lower() in SPLIT_NAMES:
+            return parent.name.lower()
+    return fallback
+
+
 def read_sources(root: Path) -> dict:
     """Which source contributed which filename prefix to a merged dataset."""
     path = root / "sources.json"
@@ -248,7 +270,8 @@ def main(argv: list[str] | None = None) -> int:
                 "The annotations are there but the frames are not — check the "
                 "archive extracted fully."
             )
-        print(f"\nimages resolved under {source_root}")
+        source_tag = source_split_tag(args.data_yaml, args.split)
+        print(f"\nimages resolved under {source_root} (source split {source_tag!r})")
         missing = 0
         for record in coco_images:
             image = locate(record.file_name, index)
@@ -274,9 +297,8 @@ def main(argv: list[str] | None = None) -> int:
                     lines.append(line)
                     counts[target] += 1
 
-            stem = (
-                f"{prefix}{Path(record.file_name).stem}" if prefix else Path(record.file_name).stem
-            )
+            base = f"{source_tag}-{Path(record.file_name).stem}"
+            stem = f"{prefix}{base}" if prefix else base
             destination = args.out / "images" / args.split / f"{stem}{image.suffix}"
             if reserved and destination.name in reserved:
                 excluded += 1
@@ -346,7 +368,8 @@ def main(argv: list[str] | None = None) -> int:
                         lines.append(remapped)
                         counts[vocabulary.classes[int(remapped.split()[0])]] += 1
 
-                stem = f"{prefix}{image.stem}" if prefix else image.stem
+                base = f"{split}-{image.stem}"
+                stem = f"{prefix}{base}" if prefix else base
                 destination = args.out / "images" / out_split / f"{stem}{image.suffix}"
                 if reserved and destination.name in reserved:
                     excluded += 1
