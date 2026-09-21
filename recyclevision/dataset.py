@@ -16,6 +16,7 @@ attention. Everything here is shaped to spend as little of it as possible:
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -216,4 +217,63 @@ def spread_sample(items: list, count: int, seed: int = 0) -> list:
         start = index * len(items) // count
         stop = (index + 1) * len(items) // count
         chosen.append(items[rng.randrange(start, max(stop, start + 1))])
+    return chosen
+
+
+def balanced_selection(
+    items: list[tuple[str, Counter]],
+    budget: int,
+    seed: int = 0,
+) -> list[str]:
+    """Choose `budget` images so rare classes survive the cut.
+
+    Taking a random subset of an imbalanced pool preserves the imbalance: at
+    99:1, a random 3,000 of 12,738 keeps roughly 99:1, and the rare classes
+    arrive in numbers too small to learn. Most of those images are teaching
+    the majority class something it already knows.
+
+    So classes are filled rarest first. Each gets an equal share of the
+    budget, images containing it are taken until that share is met, and
+    whatever budget remains is spread over the rest. An image carrying
+    several classes counts for all of them, which is why this cannot balance
+    exactly -- a frame with nine bottles and one can advances both.
+
+    Returns keys in a stable order, so the same pool and seed give the same
+    subset.
+    """
+    if budget <= 0 or not items:
+        return []
+    if budget >= len(items):
+        return [key for key, _counts in items]
+
+    frequency: Counter = Counter()
+    for _key, counts in items:
+        frequency.update(counts)
+    if not frequency:
+        return [key for key, _counts in spread_sample(items, budget, seed)]
+
+    # Rarest first: a class with few instances has few images to draw from,
+    # so it must claim them before the budget is spent elsewhere.
+    order = sorted(frequency, key=lambda name: frequency[name])
+    share = max(1, budget // len(order))
+
+    chosen: list[str] = []
+    taken: set[str] = set()
+    for name in order:
+        candidates = [
+            (key, counts) for key, counts in items if counts.get(name) and key not in taken
+        ]
+        # Spread within a class too, so a quota is not filled from one scene.
+        for key, _counts in spread_sample(candidates, min(share, len(candidates)), seed):
+            if key not in taken and len(chosen) < budget:
+                taken.add(key)
+                chosen.append(key)
+
+    if len(chosen) < budget:
+        rest = [(key, counts) for key, counts in items if key not in taken]
+        for key, _counts in spread_sample(rest, budget - len(chosen), seed):
+            if key not in taken:
+                taken.add(key)
+                chosen.append(key)
+
     return chosen

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pytest
 import yaml
 from PIL import Image
 
 from recyclevision.dataset import (
     DatasetStats,
+    balanced_selection,
     block_split,
     box_line,
     frame_difference,
@@ -211,3 +214,60 @@ class TestSpreadSample:
 
     def test_the_requested_count_is_honoured(self):
         assert len(spread_sample(list(range(97)), 13, seed=0)) == 13
+
+
+class TestBalancedSelection:
+    """A random subset of an imbalanced pool keeps the imbalance.
+
+    The real pool runs 99:1 — plastic bottle 42.5% of instances, glass bottle
+    0.4% — so a random cut leaves the rare classes in numbers too small to
+    learn, while most of the images taken teach the majority class something
+    it already knows.
+    """
+
+    @staticmethod
+    def _pool():
+        items = [(f"bottle_{i}", Counter({"bottle": 5})) for i in range(1000)]
+        items += [(f"glass_{i}", Counter({"glass": 2})) for i in range(20)]
+        items += [(f"can_{i}", Counter({"can": 1})) for i in range(60)]
+        return items
+
+    def test_a_rare_class_survives_the_cut(self, tmp_path):
+        chosen = balanced_selection(self._pool(), 150)
+        assert sum(1 for k in chosen if k.startswith("glass")) == 20
+
+    def test_a_random_cut_would_have_lost_it(self):
+        # The comparison that justifies the method existing.
+        random_cut = [k for k, _c in spread_sample(self._pool(), 150, 0)]
+        assert sum(1 for k in random_cut if k.startswith("glass")) < 10
+
+    def test_the_budget_is_respected(self):
+        assert len(balanced_selection(self._pool(), 150)) == 150
+
+    def test_no_image_is_chosen_twice(self):
+        chosen = balanced_selection(self._pool(), 300)
+        assert len(chosen) == len(set(chosen))
+
+    def test_a_budget_larger_than_the_pool_returns_everything(self):
+        pool = self._pool()
+        assert len(balanced_selection(pool, 99999)) == len(pool)
+
+    def test_an_empty_pool_is_not_an_error(self):
+        assert balanced_selection([], 10) == []
+
+    def test_a_zero_budget_returns_nothing(self):
+        assert balanced_selection(self._pool(), 0) == []
+
+    def test_images_with_no_labels_do_not_crash_it(self):
+        items = [("empty_1", Counter()), ("a", Counter({"x": 1}))]
+        assert len(balanced_selection(items, 1)) == 1
+
+    def test_the_selection_is_reproducible(self):
+        pool = self._pool()
+        assert balanced_selection(pool, 100, seed=4) == balanced_selection(pool, 100, seed=4)
+
+    def test_an_image_carrying_several_classes_advances_all_of_them(self):
+        # Why exact balance is impossible: one frame can serve two quotas.
+        items = [("both", Counter({"rare": 1, "common": 9}))]
+        items += [(f"c_{i}", Counter({"common": 5})) for i in range(50)]
+        assert "both" in balanced_selection(items, 5)
