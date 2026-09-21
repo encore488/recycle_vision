@@ -8,12 +8,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is what pyproject declares as the minimum, and what the
+        # maintainer's machine runs. Testing only on a newer interpreter let
+        # `Path.hardlink_to` (3.10+) and `zip(strict=)` (3.10+) both ship.
+        python-version: ["3.9", "3.11"]
+    name: test (python ${{ matrix.python-version }})
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       # The test suite drives the pipeline through a stub detector, so it

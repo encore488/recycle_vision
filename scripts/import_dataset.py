@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from collections import Counter
@@ -307,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     if destination.exists():
                         destination.unlink()
-                    destination.hardlink_to(image)
+                    os.link(image, destination)
                 except (OSError, FileExistsError):
                     shutil.copy2(image, destination)
             else:
@@ -378,7 +379,7 @@ def main(argv: list[str] | None = None) -> int:
                     try:
                         if destination.exists():
                             destination.unlink()
-                        destination.hardlink_to(image)
+                        os.link(image, destination)
                     except (OSError, FileExistsError):
                         shutil.copy2(image, destination)
                 else:

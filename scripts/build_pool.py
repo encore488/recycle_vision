@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from collections import Counter
@@ -81,12 +82,17 @@ def collect(root: Path, split: str, names: list[str]) -> list[tuple[Path, Counte
 
 
 def place(image: Path, label: Path, out: Path, split: str) -> None:
-    """Hardlink an image and copy its label into the pool."""
+    """Hardlink an image and copy its label into the pool.
+
+    `os.link`, not `Path.hardlink_to`: the latter is Python 3.10+ and this
+    project supports 3.9. CI ran only on 3.11, so it could not have caught
+    that — it now runs on the declared minimum too.
+    """
     destination = out / "images" / split / image.name
     if destination.exists():
         destination.unlink()
     try:
-        destination.hardlink_to(image)
+        os.link(image, destination)
     except (OSError, FileExistsError):
         shutil.copy2(image, destination)
     if label.is_file():
