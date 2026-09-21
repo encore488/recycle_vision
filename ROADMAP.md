@@ -96,6 +96,8 @@ currently disagree with each other.
       numbers (75% / 33% / 100% / 92%) that this project marks *"superseded —
       do not cite as evidence."* They are cited, above the fold, in the
       most-read document.
+- [x] Refuse to score a dead run silently (`recyclevision/runs.py`). A run
+      that dies leaves exactly what a run that converged leaves.
 - [ ] `scripts/evaluate.py` reports raw precision only. On a holdout labelling
       3.5 objects per image that number is uninterpretable, and
       `zeroshot_eval.py` already computes fair bounds. Reuse them.
@@ -108,15 +110,40 @@ holdout.
 ### The stopping rule
 
 > Stop when **either** the end-to-end routing rate on an unseen facility
-> clearly beats the current 16.2%, **or** four training runs have been spent.
-> Then ship what exists, with the number stated plainly.
+> clearly beats the current 16.2%, **or** four *completed* training runs have
+> been spent. Then ship what exists, with the number stated plainly.
+>
+> **Completed** is load-bearing. A run that dies of NaN has not been spent
+> against the budget — it has not been run. `scripts/evaluate.py` says which
+> kind it is scoring.
 
 The second outcome is a finding, not a failure — *"public data does not reach
 item-level routing across facilities, and here is the measurement"* — and it
 redirects scope instead of blocking it. The previous session had no exit
 condition, so a plateau read as failure and the work drifted.
 
+### The run that produced 16.2% was dead
+
+`runs/detect/conveyor_20260921_023058` did not plateau. Its own `results.csv`
+says it **died of fp16 overflow at epoch 22 of 40**, after epochs 10–13
+re-reported the previous epoch's validation metrics exactly — ultralytics
+restoring `last.pt` and re-running, four times, producing nothing. It is the
+same run commit `114870e` was written about, and that fix landed **11 hours
+after the run started**, so it never benefited from it.
+
+**Only epochs 1–9 are clean**, and in them `val/cls_loss` was still falling
+(1.53 → 1.28). There is no plateau evidence in this project at all. The
+number to beat was set by a corpse.
+
+`scripts/evaluate.py` now refuses to score a run silently: `recyclevision/runs.py`
+reads `results.csv` and `run_args.json` and warns on NaN, on repeated
+validation rows, and on a budget not spent.
+
 ### Ordered by cost, cheapest first
+
+0. **Re-run training with the AMP fix in place.** Nothing has been trained
+   since `114870e`. This is not a hypothesis, it is a run that never happened,
+   and it costs one overnight.
 
 1. **Scope predictions to what the holdout can contain.** No retraining.
    `plastic bag` predicted for `plastic bottle` **200 times** — a third of
@@ -131,13 +158,13 @@ condition, so a plateau read as failure and the work drifted.
        --policy policies/mrf_conveyor.yaml --classes present
    ```
 
-2. **Merge the classes the sources contradict each other on.** Approved.
-   `beverage carton`+`cardboard box` and `plastic bottle`+`plastic tub` each
-   share a bin in *both* shipped policies, so merging costs no routing
-   accuracy and removes ~10k instances of irreconcilable supervision. Confirmed
-   small at evaluation time (56 instances, all bin-neutral) but it puts a floor
-   under classification loss during training. Check `train/cls_loss` against
-   `train/box_loss` before paying for it.
+2. **Merge the classes the sources contradict each other on.** Approved, and
+   **demoted — the evidence disconfirmed it.** The predicted signature was a
+   floor under classification loss; `train/cls_loss` instead fell smoothly
+   from 1.90 to 0.54 with no floor at all, and at evaluation the contradictory
+   confusions were 56 instances, every one bin-neutral. Still free, still
+   tidier, no longer a lever. Do it when the taxonomy is touched for another
+   reason.
 
 3. **Density mismatch — the WaRP trap recurring.** WaRP was retired at 3.5
    labelled objects/image because unlabelled objects are background
@@ -145,9 +172,9 @@ condition, so a plateau read as failure and the work drifted.
    cluttered frames, and is a third of the pool. If that logic was right for
    WaRP it is a real effect here. Test: SortWaste-only at the same budget.
 
-4. **Data volume.** 3,000 train images of ~8,700 available, and accuracy
-   scales with the log of dataset size. Cheapest to test, least likely to be
-   the story.
+4. **Data volume.** 3,000 train images of ~8,700 available. Worth revisiting
+   only once a run survives its epoch budget: a dead run says nothing about
+   whether more data would have helped it.
 
 **Gate:** the stopping rule fires. Publish weights as a GitHub Release asset,
 `weights.py` prefers them over stock, licence stated.

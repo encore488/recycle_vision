@@ -25,6 +25,7 @@ from recyclevision.evaluate import destinations_reachable, score_routing  # noqa
 from recyclevision.external import MappingError, read_yolo_data_yaml  # noqa: E402
 from recyclevision.pipeline import DEFAULT_POLICY  # noqa: E402
 from recyclevision.policy import RoutingPolicy  # noqa: E402
+from recyclevision.runs import inspect_run, run_dir_of  # noqa: E402
 from recyclevision.weights import latest_trained_weights, shadowed_by  # noqa: E402
 
 #: Below this many labelled objects per image, a dataset's own annotation
@@ -188,6 +189,14 @@ def main(argv: list[str] | None = None) -> int:
     for path in (args.weights, args.data):
         if not path.is_file():
             parser.error(f"no such file: {path}")
+
+    # A run that died leaves exactly what a run that converged leaves. Say so
+    # before the numbers appear, not after they have been quoted.
+    run_dir = run_dir_of(args.weights)
+    health = inspect_run(run_dir) if run_dir else None
+    if health is not None and not health.healthy:
+        print()
+        print(health.report())
 
     from ultralytics import YOLO
 

@@ -123,7 +123,15 @@ guards.
    objects against 6.3%, so end-to-end it routed 16.2% of the stream
    correctly against ~3.6% — about 4.5× better, reported as worse. Quote
    `routed correctly`.
-10. **A class the holdout cannot contain is a pure false-positive source.**
+10. **A dead run looks exactly like a converged one.** Same `best.pt`, same
+   `results.csv`, same timestamped directory. The pool run died of fp16
+   overflow at epoch 22 of 40 and was scored a day later as the finished
+   article; the "plateau" reasoned about afterwards was an artefact of the
+   corpse. `recyclevision/runs.py` reads the run's own logs and
+   `scripts/evaluate.py` warns before printing any number. Two signatures:
+   NaN in any row, and validation metrics repeating byte-for-byte while
+   training losses keep moving.
+11. **A class the holdout cannot contain is a pure false-positive source.**
    The pool model predicted `plastic bag` for `plastic bottle` 200 times — a
    third of every matched instance — on WaRP, which contains no film at all.
    Same mechanism as the open-vocabulary phantom prompts, now in a trained
@@ -165,28 +173,38 @@ linearly.
 
 ## In flight
 
-The balanced SortWaste + ZeroWaste pool model is **trained and scored**
-(`runs/detect/conveyor_20260921_023058`). On WaRP, a third facility it never
-saw: mAP50 0.071, 38.5% matched, 42.0% routing accuracy of matched, and
-**16.2% routed correctly end to end** against the WaRP model's ~3.6%.
+**Nothing has been trained since the AMP fix (`114870e`, 2026-09-21 13:59Z).**
 
-Better, and not good. The work now is [ROADMAP.md](ROADMAP.md) Phase 1, which
-is **time-boxed to four training runs** — the previous session had no exit
-condition and drifted when the run plateaued. Ordered cheapest first:
+The pool run everything is currently measured against
+(`runs/detect/conveyor_20260921_023058`, started 02:30Z the same day) **died of
+fp16 overflow at epoch 22 of 40** — the run that fix was written about, which
+started 11 hours before it landed. Epochs 10–13 re-reported the previous
+epoch's validation metrics exactly; epoch 22 went NaN. Only epochs 1–9 are
+clean, and `val/cls_loss` was still falling in them (1.53 → 1.28).
 
-1. `--classes present` — scope predictions to what the holdout can hold. No
-   retraining. `plastic bag` for `plastic bottle` ×200 is the single largest
-   error and WaRP has no film.
-2. Merge the classes the sources contradict each other on (`beverage
-   carton`/`cardboard box`, `plastic bottle`/`plastic tub`). Approved; costs
-   no routing accuracy. Check `train/cls_loss` against `train/box_loss` first.
-3. ZeroWaste's 5.9 objects/image against SortWaste's 16.6 — the WaRP density
+So the current numbers — 16.2% routed correctly end to end on WaRP against the
+WaRP model's ~3.6% — come from a model that never finished training. Treat
+them as a floor, not as a plateau. **There is no plateau evidence in this
+project.**
+
+Next, in order ([ROADMAP.md](ROADMAP.md) Phase 1, time-boxed to four
+*completed* runs):
+
+0. **Re-run training.** The AMP guard is in; the run simply never happened.
+1. `evaluate.py --classes present` — scope predictions to what the holdout can
+   hold. Free, no retraining. `plastic bag` for `plastic bottle` ×200 is the
+   largest single error and WaRP contains no film.
+2. ZeroWaste's 5.9 objects/image against SortWaste's 16.6 — the WaRP density
    trap, possibly recurring at a third of the pool.
-4. Data volume: 3,000 train images of ~8,700 available.
+3. Data volume: 3,000 train images of ~8,700. Only meaningful once a run
+   survives its budget.
 
-Two decisions are settled (2026-09-21): **ZeroWaste stays** and v1.0 weights
-ship as non-commercial research artifacts, and the **training taxonomy merges**
-where the sources disagree.
+The taxonomy merge is approved but **demoted**: it predicted a floor under
+`train/cls_loss`, which instead fell smoothly 1.90 → 0.54. Disconfirmed as a
+lever; do it when the taxonomy is touched anyway.
+
+Settled 2026-09-21: **ZeroWaste stays** and v1.0 weights ship non-commercial;
+the **training taxonomy merges** where sources disagree.
 
 One confound to state whenever a WaRP number is quoted: WaRP has 534 glass
 instances and neither training source has any glass at all, so ~5% of its
