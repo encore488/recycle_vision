@@ -177,6 +177,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument(
+        "--amp",
+        choices=["on", "off", "auto"],
+        default="auto",
+        help="mixed precision. 'auto' disables it on mps, where fp16 overflow "
+        "produces NaN losses part-way into a run: ultralytics then restores "
+        "last.pt, loses the epoch, and eventually poisons last.pt itself.",
+    )
+    parser.add_argument(
         "--fraction",
         type=float,
         default=1.0,
@@ -260,6 +268,16 @@ def main(argv: list[str] | None = None) -> int:
             "  machine starts swapping."
         )
 
+    # Mixed precision is a real speedup on CUDA and a liability on MPS: a run
+    # trained fine for nine epochs, then produced NaN losses at 10, 11, 12, 13
+    # and 22. Each time ultralytics restored last.pt and re-ran the epoch —
+    # four consecutive recoveries returned byte-identical metrics, so the work
+    # was simply discarded — until last.pt was itself NaN and every metric
+    # went to zero.
+    use_amp = {"on": True, "off": False}.get(args.amp, device != "mps")
+    if args.amp == "auto" and device == "mps":
+        print("  mixed precision OFF (mps fp16 overflows into NaN losses)")
+
     model = YOLO(model_name)
     results = model.train(
         data=str(args.data),
@@ -267,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
         imgsz=args.imgsz,
         batch=args.batch,
         fraction=args.fraction,
+        amp=use_amp,
         device=device,
         patience=args.patience,
         cache=args.cache or False,
@@ -288,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
                 "batch": args.batch,
                 "patience": args.patience,
                 "fraction": args.fraction,
+                "amp": use_amp,
                 "cache": args.cache,
                 "started_utc": name,
             },

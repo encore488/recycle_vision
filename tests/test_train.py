@@ -143,3 +143,40 @@ class TestNmsBudget:
         raised = 2.0 + train.NMS_SECONDS_PER_IMAGE * 16
         assert stock == pytest.approx(2.8)
         assert raised > 10 * stock
+
+
+class TestMixedPrecision:
+    """fp16 on MPS overflows into NaN losses part-way through a run.
+
+    Observed: nine clean epochs, then NaN at 10, 11, 12, 13 and 22. Each time
+    ultralytics restored last.pt and re-ran — four consecutive recoveries
+    returned byte-identical metrics, so the work was discarded — until
+    last.pt was itself NaN and every metric went to zero.
+    """
+
+    @staticmethod
+    def _resolve(choice: str, device: str) -> bool:
+        return {"on": True, "off": False}.get(choice, device != "mps")
+
+    def test_auto_disables_amp_on_mps(self):
+        assert self._resolve("auto", "mps") is False
+
+    def test_auto_keeps_amp_on_cuda(self):
+        # It is a real speedup there, and does not overflow.
+        assert self._resolve("auto", "0") is True
+
+    def test_auto_keeps_amp_on_cpu(self):
+        assert self._resolve("auto", "cpu") is True
+
+    def test_it_can_be_forced_on(self):
+        assert self._resolve("on", "mps") is True
+
+    def test_it_can_be_forced_off_anywhere(self):
+        assert self._resolve("off", "0") is False
+
+    def test_train_exposes_the_choice(self):
+        import inspect
+
+        source = inspect.getsource(train.main)
+        assert '"--amp"' in source
+        assert "amp=use_amp" in source, "the choice must reach model.train()"
