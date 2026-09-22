@@ -292,6 +292,34 @@ def main(argv: list[str] | None = None) -> int:
 
     model.add_callback("on_fit_epoch_end", _halt_if_stalled)
 
+    # Three runs have gone NaN and every diagnosis so far was a guess: fp16
+    # overflow, then degenerate labels, both wrong. A guess costs a night; the
+    # batch that actually produced the NaN costs one print. Report it once --
+    # ultralytics recovers and re-runs, so this would otherwise fire on every
+    # retry and bury the first and most useful occurrence.
+    reported = []
+
+    def _name_the_nan_batch(trainer) -> None:
+        if reported:
+            return
+        loss = getattr(trainer, "loss", None)
+        try:
+            if loss is None or not bool(loss.isnan().any()):
+                return
+        except AttributeError:
+            return
+        files = (getattr(trainer, "batch", None) or {}).get("im_file") or []
+        reported.append(True)
+        print("\n  NaN loss. The batch that produced it:")
+        for path in files:
+            print(f"    {path}")
+        print(
+            "  Nothing else in this run identifies these images. Check them, and\n"
+            "  their labels, before theorising about the device."
+        )
+
+    model.add_callback("on_train_batch_end", _name_the_nan_batch)
+
     results = model.train(
         data=str(args.data),
         epochs=args.epochs,

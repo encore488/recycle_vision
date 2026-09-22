@@ -101,6 +101,11 @@ currently disagree with each other.
 - [x] Reject zero-area boxes at the point they are written, find them in
       already-imported data (`scripts/check_labels.py`), and halt a run that
       repeats a score three times instead of letting it loop overnight.
+- [x] `scripts/preflight.py` — gate a run on everything checkable without a
+      GPU, and name the failing batch on the first NaN.
+- [x] Make `--classes` actually filter. `model.val(classes=...)` is accepted
+      and ignored by ultralytics 8.4.146, so the first version of the flag
+      silently did nothing.
 - [ ] `scripts/evaluate.py` reports raw precision only. On a holdout labelling
       3.5 objects per image that number is uninterpretable, and
       `zeroshot_eval.py` already computes fair bounds. Reuse them.
@@ -144,14 +149,15 @@ validation rows, and on a budget not spent.
 
 ### Ordered by cost, cheapest first
 
-0. **Check the labels, then re-import and re-run.** The AMP fix did not hold:
-   a second run with mixed precision off NaN'd from epoch 9 and looped to 18,
-   reporting the same score six times. The cause was `box_line` writing boxes
-   with zero width or height — the loss divides by box area — while
-   `polygon_line` three lines below had always rejected the degenerate case.
-   `scripts/check_labels.py` reports how many exist, in seconds, without a GPU.
-   Consider moving the re-run to Colab: mps has produced zero completed runs
-   in two attempts at roughly ten hours each.
+0. **Get one completed run, on CUDA.** Three runs, none finished, and the
+   NaN cause is still unknown — fp16 overflow and degenerate labels were both
+   diagnosed and both wrong; the pool's labels scan clean. Ultralytics seeds
+   deterministically, so re-running unchanged fails identically. Colab has
+   working AMP and a fast NMS kernel (`notebooks/train_colab.ipynb`), and
+   `train.py` now prints the failing batch's image paths on the first NaN, so
+   a failure there produces evidence instead of another theory.
+
+   Gate every run on `python scripts/preflight.py datasets/pool/data.yaml`.
 
 1. **Scope predictions to what the holdout can contain.** No retraining.
    `plastic bag` predicted for `plastic bottle` **200 times** — a third of

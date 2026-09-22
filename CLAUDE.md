@@ -32,7 +32,7 @@ labelled instances beside it. Trap 9 below is what happens when you forget.
 | `recyclevision/` | the library — no Streamlit, no scripts, importable and tested |
 | `app.py` | Streamlit UI. Presentation only; every decision is made in the library |
 | `train.py` | fine-tuning entry point |
-| `scripts/` | one job each: inspect, import, build_pool, build_eval_set, evaluate, zeroshot_eval, prelabel, extract_frames, diagnose_eval, fetch_samples, build_vocab_embeddings, check_labels |
+| `scripts/` | one job each: inspect, import, build_pool, build_eval_set, evaluate, zeroshot_eval, prelabel, extract_frames, diagnose_eval, fetch_samples, build_vocab_embeddings, check_labels, preflight |
 | `policies/*.yaml` | item → bin, per facility. `household` and `mrf_conveyor` |
 | `vocab/*.yaml` + `.pt` | open-vocabulary prompts and their precomputed embeddings |
 | `mappings/*.yaml` | outside dataset classes → this project's vocabulary |
@@ -123,17 +123,22 @@ guards.
    objects against 6.3%, so end-to-end it routed 16.2% of the stream
    correctly against ~3.6% — about 4.5× better, reported as worse. Quote
    `routed correctly`.
-10. **A zero-area box makes the loss NaN, and the run never stops.** The
-   detector's loss divides by box area. `box_line` clamped coordinates but
-   never rejected a degenerate box, while `polygon_line` three lines below
-   always rejected a degenerate polygon. One such label NaNs its batch;
-   ultralytics restores `last.pt`, re-runs, meets it again — and its
-   "attempt 1/3" counter **resets on every successful recovery**, so the run
-   alternates NaN and restore indefinitely, reporting identical metrics for
-   hours. This was misread as fp16 overflow (`114870e`) and then as a
-   plateau. Two runs, roughly 20 hours. `scripts/check_labels.py` finds them
-   in seconds; `box_line` now drops them; `StallDetector` halts a run that
-   repeats a score three times.
+10. **Ultralytics' NaN recovery never gives up.** It restores `last.pt`,
+   re-runs the epoch, and its "attempt 1/3" counter **resets on every
+   successful recovery** — so a run that NaNs on alternate epochs alternates
+   failure and restore indefinitely, reporting identical metrics for hours.
+   Two runs, roughly 20 hours, read as a plateau. `StallDetector` in
+   `train.py` halts a run whose fitness repeats three times, and on the first
+   NaN `train.py` prints the image paths in the failing batch.
+
+   **The cause of those NaNs is still unknown.** It was diagnosed as fp16
+   overflow (`114870e`) and then as zero-area boxes; both were wrong, and the
+   second cost a night. `box_line` now rejects a degenerate box anyway —
+   `polygon_line` always had — but `scripts/check_labels.py` reports the pool
+   clean, so that was not it. Runs 1 and 2 NaN'd at epochs 10 and 9 with AMP
+   on and off respectively; ultralytics seeds deterministically, so the two
+   trajectories were nearly identical and the AMP change barely moved it.
+   **Do not theorise again without the failing batch.**
 11. **A dead run looks exactly like a converged one.** Same `best.pt`, same
    `results.csv`, same timestamped directory. The pool run died of fp16
    overflow at epoch 22 of 40 and was scored a day later as the finished
@@ -148,6 +153,16 @@ guards.
    Same mechanism as the open-vocabulary phantom prompts, now in a trained
    model. `scripts/evaluate.py --classes present` scopes to whatever the
    holdout actually labels.
+13. **`model.val(classes=...)` is accepted and ignored** by ultralytics
+   8.4.146. A run scoped to five classes returned byte-identical metrics and
+   still reported the two suppressed classes. Scoping now happens in
+   `scope_confusion`, on a matrix this project owns. The general lesson: an
+   argument a library accepts is not an argument it honours — check the
+   output changed. A flag that silently does nothing is worse than no flag.
+14. **Run `scripts/preflight.py` before training.** It blocks on unlabelled
+   images, split leakage, a class present only in val, NaN-producing labels
+   and a stale label cache; it warns on sub-pixel boxes, empty declared
+   classes and class imbalance. Seconds, no GPU.
 
 ## Working conventions
 
@@ -184,34 +199,41 @@ linearly.
 
 ## In flight
 
-**Two training runs have died of NaN. Neither was fp16.**
+**Three runs spent, none completed, and the NaN cause is still unknown.**
 
-`conveyor_20260921_023058` (AMP on) and `conveyor_20260921_161713` (AMP off,
-after the `114870e` fix) both NaN'd and both looped: the second alternated
-NaN and recovery from epoch 9 to at least 18, reporting
-`0.555 0.514 0.53 0.403` six times in a row. Ultralytics' retry counter resets
-on each successful recovery, so neither run would ever have stopped.
+Runs `conveyor_20260921_023058` (AMP on, NaN at 10) and
+`conveyor_20260921_161713` (AMP off, NaN at 9) both alternated NaN and
+recovery until stopped. Two diagnoses were wrong: fp16 overflow, then
+degenerate labels. `scripts/check_labels.py` reports the pool **clean** —
+42,594 train instances, zero fatal defects, six duplicate lines in val.
 
-**The cause is in the labels, not the device.** `box_line` wrote boxes with
-zero width or height; the loss divides by box area. Fixed at the source, and
-`scripts/check_labels.py` reports how many exist in an already-imported
-dataset without needing torch or a GPU.
+Ultralytics seeds deterministically, so those two runs followed nearly the
+same trajectory; that is why the AMP change moved the failure by one epoch and
+nothing else. **Re-running unchanged will fail identically.**
 
-So the second run's clean epochs are still worth something: **mAP50 0.53,
-mAP50-95 0.403 on the pool's own val split** at epoch 5–8, which is the best
-this project has measured. Its `best.pt` is real. Score it on WaRP before
-re-importing anything.
+Next run goes to **Colab/CUDA** (`docs/TRAINING_ON_GPU.md`,
+`notebooks/train_colab.ipynb`): mps has produced zero completed runs in two
+attempts at ~10 hours each, and CUDA has working AMP and a fast NMS kernel. If
+it NaNs there too, `train.py` now prints the failing batch's image paths on the
+first occurrence — that is the next real evidence, and nobody should theorise
+without it.
 
-Order of work ([ROADMAP.md](ROADMAP.md) Phase 1, four *completed* runs):
+Before any run:
 
-0. `python scripts/check_labels.py datasets/pool/data.yaml` — seconds, and it
-   decides everything below.
-1. Re-import whichever sources carry the bad labels, rebuild the pool, re-run.
-   Consider Colab: `docs/TRAINING_ON_GPU.md`, `notebooks/train_colab.ipynb`.
-   A T4 has working AMP and a fast NMS kernel, and mps has now produced zero
-   completed runs in two attempts at ~10 hours each.
-2. `evaluate.py --classes present` — free, no retraining. `plastic bag` for
-   `plastic bottle` ×200 on a holdout with no film in it.
+```bash
+python scripts/preflight.py datasets/pool/data.yaml
+```
+
+Current best measurement, from the clean epochs 5–8 of run 2: **mAP50 0.53,
+mAP50-95 0.403** on the pool's own val split, and **16.2% routed correctly
+end to end** on WaRP against the WaRP model's ~3.6%. Both from a model that
+never finished training, so both are floors.
+
+Order of work ([ROADMAP.md](ROADMAP.md) Phase 1, four *completed* runs — none
+spent yet, since none completed):
+
+1. One completed run on CUDA. Everything below is unreadable until there is one.
+2. `evaluate.py --classes present`, now that it actually filters.
 3. ZeroWaste's 5.9 objects/image against SortWaste's 16.6 — the WaRP density
    trap, possibly recurring at a third of the pool.
 4. Data volume: 3,000 train images of ~8,700.

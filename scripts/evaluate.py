@@ -135,6 +135,47 @@ def resolve_classes(requested: str | None, data: Path, names: list[str]) -> list
     return [names.index(name) for name in wanted]
 
 
+def scope_confusion(matrix, names: list[str], keep: list[int]) -> list[list[int]]:
+    """Suppress predictions of classes the holdout cannot contain.
+
+    **Not a pass-through to ultralytics.** `model.val(classes=...)` is accepted
+    and silently ignored by 8.4.146: a run scoped to five classes returned
+    byte-identical metrics and still reported `plastic bag` 200 times. A flag
+    that quietly does nothing is worse than no flag, so the suppression happens
+    here, on a matrix this project owns.
+
+    A suppressed prediction does not delete the object it was sitting on -- it
+    *unfinds* it. So its count moves to the background row, where ultralytics
+    keeps objects nothing matched, and the ground-truth column totals are
+    unchanged. Deleting instead would shrink the denominator and make
+    end-to-end accuracy rise purely because 200 bottles stopped existing.
+
+    Predictions on background are the exception: nothing was there, so they
+    are simply dropped.
+
+    This is a **lower bound** on what true scoping is worth. Real filtering
+    happens inside NMS, where suppressing the winning class lets the runner-up
+    take the box -- and the runner-up for a bottle called film is often bottle.
+    Here the detection is lost outright. A gain measured this way is real; an
+    absence of gain is not conclusive.
+    """
+    size = len(names)
+    allowed = set(keep)
+    scoped = [[int(matrix[p][a]) for a in range(size + 1)] for p in range(size + 1)]
+
+    for predicted in range(size):
+        if predicted in allowed:
+            continue
+        for actual in range(size):
+            # The object is still there; it is merely unfound now.
+            scoped[size][actual] += scoped[predicted][actual]
+            scoped[predicted][actual] = 0
+        # A box on background was on nothing, so nothing is owed to it.
+        scoped[predicted][size] = 0
+
+    return scoped
+
+
 def _pairs_from_confusion(matrix, names: list[str]) -> list[tuple[str, str]]:
     """Expand a confusion matrix into (predicted, actual) pairs.
 
@@ -205,17 +246,18 @@ def main(argv: list[str] | None = None) -> int:
     keep = resolve_classes(args.classes, args.data, names)
     if keep is not None:
         print(
-            f"\nscoped to {len(keep)} of {len(names)} class(es): "
+            f"\nscoping to {len(keep)} of {len(names)} class(es): "
             + ", ".join(names[i] for i in keep)
             + "\n  the rest cannot appear in this holdout, so any prediction of one"
-            "\n  could only ever be wrong."
+            "\n  could only ever be wrong. Suppressed predictions become misses, which"
+            "\n  makes this a LOWER bound: real NMS-level scoping would let the"
+            "\n  runner-up class take the box instead of losing it."
         )
 
     metrics = model.val(
         data=str(args.data),
         imgsz=args.imgsz,
         device=args.device,
-        classes=keep,
         verbose=False,
     )
 
@@ -239,13 +281,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  precision  {metrics.box.mp:.3f}")
     print(f"  recall     {metrics.box.mr:.3f}")
 
-    pairs = _pairs_from_confusion(metrics.confusion_matrix.matrix, names)
+    # Read the denominator before scoping: suppressing a prediction does not
+    # remove the object it failed to find.
+    raw_matrix = metrics.confusion_matrix.matrix
+    labelled = labelled_instances(raw_matrix, names)
+    scoped = scope_confusion(raw_matrix, names, keep) if keep is not None else raw_matrix
+    pairs = _pairs_from_confusion(scoped, names)
     if not pairs:
         print("\nno matched instances — nothing to score for routing")
         return 0
 
     policy = RoutingPolicy.load(args.policy)
-    labelled = labelled_instances(metrics.confusion_matrix.matrix, names)
     print(f"\nrouting metrics ({policy.name})")
     print(score_routing(pairs, policy, labelled=labelled).report())
 

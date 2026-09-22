@@ -150,3 +150,59 @@ class TestClassScoping:
             evaluate.resolve_classes("present", descriptor, NAMES)
 
         assert "--classes" in str(caught.value)
+
+
+class TestScopeConfusion:
+    """Ultralytics 8.4.146 accepts `val(classes=...)` and ignores it.
+
+    A run scoped to five classes returned byte-identical metrics and still
+    reported `plastic bag` 200 times. The suppression has to happen on a
+    matrix this project owns, or the flag is a lie.
+    """
+
+    def _matrix(self):
+        size = len(NAMES)
+        m = [[0] * (size + 1) for _ in range(size + 1)]
+        m[0][0] = 5  # metal can, correct
+        m[1][1] = 3  # plastic bottle, correct
+        m[2][1] = 200  # plastic bag predicted for plastic bottle — the error
+        m[2][size] = 40  # plastic bag on background
+        m[size][1] = 9  # plastic bottle missed entirely
+        return m
+
+    def test_a_suppressed_class_stops_producing_pairs(self):
+        scoped = evaluate.scope_confusion(self._matrix(), NAMES, keep=[0, 1])
+        pairs = evaluate._pairs_from_confusion(scoped, NAMES)
+
+        assert ("plastic bag", "plastic bottle") not in pairs
+        assert pairs.count(("metal can", "metal can")) == 5
+
+    def test_the_labelled_total_is_unchanged_by_scoping(self):
+        """Suppressing a prediction does not remove the object it failed to find.
+
+        Reading the denominator from the scoped matrix would make end-to-end
+        accuracy rise purely because objects vanished.
+        """
+        raw = self._matrix()
+        scoped = evaluate.scope_confusion(raw, NAMES, keep=[0, 1])
+
+        assert evaluate.labelled_instances(raw, NAMES) == 217
+        assert evaluate.labelled_instances(scoped, NAMES) == 217
+
+    def test_suppressed_detections_become_misses_not_successes(self, policy):
+        """200 bottles called film must not silently become 200 correct bottles."""
+        from recyclevision.evaluate import score_routing
+
+        raw = self._matrix()
+        labelled = evaluate.labelled_instances(raw, NAMES)
+        scoped = evaluate.scope_confusion(raw, NAMES, keep=[0, 1])
+        score = score_routing(evaluate._pairs_from_confusion(scoped, NAMES), policy, labelled)
+
+        assert score.matched == 8
+        assert score.labelled == 217
+
+    def test_keeping_every_class_changes_nothing(self):
+        raw = self._matrix()
+        scoped = evaluate.scope_confusion(raw, NAMES, keep=[0, 1, 2])
+
+        assert scoped == raw
