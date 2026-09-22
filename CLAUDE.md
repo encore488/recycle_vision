@@ -32,7 +32,7 @@ labelled instances beside it. Trap 9 below is what happens when you forget.
 | `recyclevision/` | the library — no Streamlit, no scripts, importable and tested |
 | `app.py` | Streamlit UI. Presentation only; every decision is made in the library |
 | `train.py` | fine-tuning entry point |
-| `scripts/` | one job each: inspect, import, build_pool, build_eval_set, evaluate, zeroshot_eval, prelabel, extract_frames, diagnose_eval, fetch_samples, build_vocab_embeddings |
+| `scripts/` | one job each: inspect, import, build_pool, build_eval_set, evaluate, zeroshot_eval, prelabel, extract_frames, diagnose_eval, fetch_samples, build_vocab_embeddings, check_labels |
 | `policies/*.yaml` | item → bin, per facility. `household` and `mrf_conveyor` |
 | `vocab/*.yaml` + `.pt` | open-vocabulary prompts and their precomputed embeddings |
 | `mappings/*.yaml` | outside dataset classes → this project's vocabulary |
@@ -123,7 +123,18 @@ guards.
    objects against 6.3%, so end-to-end it routed 16.2% of the stream
    correctly against ~3.6% — about 4.5× better, reported as worse. Quote
    `routed correctly`.
-10. **A dead run looks exactly like a converged one.** Same `best.pt`, same
+10. **A zero-area box makes the loss NaN, and the run never stops.** The
+   detector's loss divides by box area. `box_line` clamped coordinates but
+   never rejected a degenerate box, while `polygon_line` three lines below
+   always rejected a degenerate polygon. One such label NaNs its batch;
+   ultralytics restores `last.pt`, re-runs, meets it again — and its
+   "attempt 1/3" counter **resets on every successful recovery**, so the run
+   alternates NaN and restore indefinitely, reporting identical metrics for
+   hours. This was misread as fp16 overflow (`114870e`) and then as a
+   plateau. Two runs, roughly 20 hours. `scripts/check_labels.py` finds them
+   in seconds; `box_line` now drops them; `StallDetector` halts a run that
+   repeats a score three times.
+11. **A dead run looks exactly like a converged one.** Same `best.pt`, same
    `results.csv`, same timestamped directory. The pool run died of fp16
    overflow at epoch 22 of 40 and was scored a day later as the finished
    article; the "plateau" reasoned about afterwards was an artefact of the
@@ -131,7 +142,7 @@ guards.
    `scripts/evaluate.py` warns before printing any number. Two signatures:
    NaN in any row, and validation metrics repeating byte-for-byte while
    training losses keep moving.
-11. **A class the holdout cannot contain is a pure false-positive source.**
+12. **A class the holdout cannot contain is a pure false-positive source.**
    The pool model predicted `plastic bag` for `plastic bottle` 200 times — a
    third of every matched instance — on WaRP, which contains no film at all.
    Same mechanism as the open-vocabulary phantom prompts, now in a trained
@@ -173,35 +184,40 @@ linearly.
 
 ## In flight
 
-**Nothing has been trained since the AMP fix (`114870e`, 2026-09-21 13:59Z).**
+**Two training runs have died of NaN. Neither was fp16.**
 
-The pool run everything is currently measured against
-(`runs/detect/conveyor_20260921_023058`, started 02:30Z the same day) **died of
-fp16 overflow at epoch 22 of 40** — the run that fix was written about, which
-started 11 hours before it landed. Epochs 10–13 re-reported the previous
-epoch's validation metrics exactly; epoch 22 went NaN. Only epochs 1–9 are
-clean, and `val/cls_loss` was still falling in them (1.53 → 1.28).
+`conveyor_20260921_023058` (AMP on) and `conveyor_20260921_161713` (AMP off,
+after the `114870e` fix) both NaN'd and both looped: the second alternated
+NaN and recovery from epoch 9 to at least 18, reporting
+`0.555 0.514 0.53 0.403` six times in a row. Ultralytics' retry counter resets
+on each successful recovery, so neither run would ever have stopped.
 
-So the current numbers — 16.2% routed correctly end to end on WaRP against the
-WaRP model's ~3.6% — come from a model that never finished training. Treat
-them as a floor, not as a plateau. **There is no plateau evidence in this
-project.**
+**The cause is in the labels, not the device.** `box_line` wrote boxes with
+zero width or height; the loss divides by box area. Fixed at the source, and
+`scripts/check_labels.py` reports how many exist in an already-imported
+dataset without needing torch or a GPU.
 
-Next, in order ([ROADMAP.md](ROADMAP.md) Phase 1, time-boxed to four
-*completed* runs):
+So the second run's clean epochs are still worth something: **mAP50 0.53,
+mAP50-95 0.403 on the pool's own val split** at epoch 5–8, which is the best
+this project has measured. Its `best.pt` is real. Score it on WaRP before
+re-importing anything.
 
-0. **Re-run training.** The AMP guard is in; the run simply never happened.
-1. `evaluate.py --classes present` — scope predictions to what the holdout can
-   hold. Free, no retraining. `plastic bag` for `plastic bottle` ×200 is the
-   largest single error and WaRP contains no film.
-2. ZeroWaste's 5.9 objects/image against SortWaste's 16.6 — the WaRP density
+Order of work ([ROADMAP.md](ROADMAP.md) Phase 1, four *completed* runs):
+
+0. `python scripts/check_labels.py datasets/pool/data.yaml` — seconds, and it
+   decides everything below.
+1. Re-import whichever sources carry the bad labels, rebuild the pool, re-run.
+   Consider Colab: `docs/TRAINING_ON_GPU.md`, `notebooks/train_colab.ipynb`.
+   A T4 has working AMP and a fast NMS kernel, and mps has now produced zero
+   completed runs in two attempts at ~10 hours each.
+2. `evaluate.py --classes present` — free, no retraining. `plastic bag` for
+   `plastic bottle` ×200 on a holdout with no film in it.
+3. ZeroWaste's 5.9 objects/image against SortWaste's 16.6 — the WaRP density
    trap, possibly recurring at a third of the pool.
-3. Data volume: 3,000 train images of ~8,700. Only meaningful once a run
-   survives its budget.
+4. Data volume: 3,000 train images of ~8,700.
 
 The taxonomy merge is approved but **demoted**: it predicted a floor under
-`train/cls_loss`, which instead fell smoothly 1.90 → 0.54. Disconfirmed as a
-lever; do it when the taxonomy is touched anyway.
+`train/cls_loss`, which instead fell smoothly 1.90 → 0.54.
 
 Settled 2026-09-21: **ZeroWaste stays** and v1.0 weights ship non-commercial;
 the **training taxonomy merges** where sources disagree.

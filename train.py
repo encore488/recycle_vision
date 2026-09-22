@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from recyclevision.external import BOXES, EMPTY, MIXED, POLYGONS  # noqa: E402
+from recyclevision.runs import StallDetector  # noqa: E402
 
 #: Starting weights, per dataset geometry. A segmentation model cannot train
 #: on a boxes-only dataset, so the dataset picks the model rather than the
@@ -279,6 +280,18 @@ def main(argv: list[str] | None = None) -> int:
         print("  mixed precision OFF (mps fp16 overflows into NaN losses)")
 
     model = YOLO(model_name)
+
+    # Ultralytics will otherwise alternate NaN and recovery forever; see
+    # StallDetector. A run that is not moving should cost minutes, not a night.
+    stall = StallDetector()
+
+    def _halt_if_stalled(trainer) -> None:
+        if stall.observe(getattr(trainer, "fitness", None)):
+            print(stall.message())
+            trainer.stop = True
+
+    model.add_callback("on_fit_epoch_end", _halt_if_stalled)
+
     results = model.train(
         data=str(args.data),
         epochs=args.epochs,

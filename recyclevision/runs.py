@@ -197,3 +197,57 @@ def run_dir_of(weights: Path) -> Path | None:
     if parent.name != "weights":
         return None
     return parent.parent
+
+
+class StallDetector:
+    """Halt a run that is re-running the same epoch instead of progressing.
+
+    Ultralytics recovers from a NaN epoch by restoring `last.pt` and re-running
+    it, and allows three attempts. But the counter resets on every *successful*
+    recovery, so a run that NaNs on alternate epochs never exhausts it: it
+    alternates failure and restore indefinitely, reporting identical validation
+    metrics each time.
+
+    A run of this project spent ten epochs and roughly four hours that way,
+    reporting `0.555 0.514 0.53 0.403` six times over. Nothing in the output
+    says "this is not working" -- the progress bars complete, the metrics
+    print, and the numbers are plausible.
+
+    So: identical fitness for `limit` consecutive epochs means the weights have
+    not moved. Stop and say so, rather than spending the night proving it.
+    """
+
+    def __init__(self, limit: int = 3) -> None:
+        self.limit = limit
+        self.previous: float | None = None
+        self.repeats = 0
+
+    def observe(self, fitness: float | None) -> bool:
+        """Record one epoch's fitness. True when the run should stop.
+
+        A NaN epoch is not itself a stall -- ultralytics is entitled to recover
+        from one -- so it breaks the streak rather than counting toward it, and
+        needs no special case to do so: NaN compares unequal to everything
+        including itself, so the equality test below resets on it. An explicit
+        guard here was removed because no test could make it fail, and a branch
+        that cannot fail is not a guard.
+
+        What counts is the *recovered* epoch landing on the same weights again.
+        """
+        if self.previous is not None and fitness is not None and fitness == self.previous:
+            self.repeats += 1
+        else:
+            self.repeats = 0
+        self.previous = fitness
+        return self.repeats >= self.limit - 1
+
+    def message(self) -> str:
+        return (
+            f"\nSTOPPING: {self.repeats + 1} consecutive epochs scored identically "
+            f"({self.previous}).\nThe weights are not moving — ultralytics is restoring "
+            "last.pt after a NaN and\nre-running the same epoch. Its retry counter resets "
+            "on each recovery, so it\nwill not stop on its own.\n\n"
+            "  python scripts/check_labels.py <this run's data.yaml>\n\n"
+            "A box with zero width or height divides by zero in the loss and NaNs every\n"
+            "epoch that touches it."
+        )

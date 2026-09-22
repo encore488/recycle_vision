@@ -22,6 +22,8 @@ from pathlib import Path
 
 import yaml
 
+from .labels import MIN_SIDE as LABEL_MIN_SIDE
+
 #: Frames closer than this (mean absolute pixel difference on a downscaled
 #: greyscale thumbnail, 0-255) are treated as the same frame.
 DEFAULT_MIN_DIFF = 6.0
@@ -109,16 +111,36 @@ def block_split(count: int, val_fraction: float = 0.2) -> tuple[list[int], list[
     return list(range(split_at)), list(range(split_at, count))
 
 
+#: Shared with `recyclevision.labels`, so what is written and what is
+#: rejected can never disagree.
+MIN_BOX_SIDE = LABEL_MIN_SIDE
+
+
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
 def box_line(class_id: int, box, width: int, height: int) -> str:
-    """One YOLO detection label line: `class cx cy w h`, all normalised."""
+    """One YOLO detection label line: `class cx cy w h`, all normalised.
+
+    Returns an empty string for a box too small to have an area, exactly as
+    `polygon_line` below does for a polygon too small to be a shape. The
+    symmetry was missing and it cost two training runs: the detector's loss
+    divides by box area, so a zero-width box NaNs the batch, ultralytics
+    restores `last.pt` and re-runs, and the re-run meets the same label. Its
+    retry counter resets on each successful recovery, so the run never stops
+    -- it reports identical metrics for hours and reads as a plateau.
+
+    Rounding alone is enough to produce one. A 1-pixel-tall annotation in a
+    1080-pixel frame is 0.000926, but a sliver polygon converted to a box can
+    fall under the half-ulp of the six decimal places written here.
+    """
     cx = ((box.x1 + box.x2) / 2) / width
     cy = ((box.y1 + box.y2) / 2) / height
     w = box.width / width
     h = box.height / height
+    if _clamp01(w) <= MIN_BOX_SIDE or _clamp01(h) <= MIN_BOX_SIDE:
+        return ""
     return " ".join([str(class_id)] + [f"{_clamp01(v):.6f}" for v in (cx, cy, w, h)])
 
 

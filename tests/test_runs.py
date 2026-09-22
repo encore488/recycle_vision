@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from recyclevision.runs import inspect_run, run_dir_of
+from recyclevision.runs import StallDetector, inspect_run, run_dir_of
 
 HEADER = "epoch,train/box_loss,train/cls_loss,val/box_loss,val/cls_loss\n"
 
@@ -144,3 +144,53 @@ class TestRunDirOf:
 
     def test_weights_kept_anywhere_else_have_no_run(self):
         assert run_dir_of(Path("models/best_model.pt")) is None
+
+
+class TestStallDetector:
+    def test_improving_fitness_never_stops(self):
+        stall = StallDetector(limit=3)
+
+        assert [stall.observe(f) for f in (0.30, 0.35, 0.40, 0.42)] == [False] * 4
+
+    def test_three_identical_epochs_stop_the_run(self):
+        """The observed failure: 0.403 reported six times in a row."""
+        stall = StallDetector(limit=3)
+
+        assert stall.observe(0.403) is False
+        assert stall.observe(0.403) is False
+        assert stall.observe(0.403) is True
+
+    def test_two_identical_epochs_are_tolerated(self):
+        """Fitness can legitimately repeat once; three times it has not moved."""
+        stall = StallDetector(limit=3)
+        stall.observe(0.403)
+
+        assert stall.observe(0.403) is False
+
+    def test_a_nan_epoch_resets_rather_than_counting(self):
+        """Ultralytics is entitled to recover from one NaN.
+
+        Counting the NaN itself would stop a run that then recovers properly.
+        What matters is the recovered epoch landing on the same weights.
+        """
+        stall = StallDetector(limit=3)
+        stall.observe(0.403)
+        stall.observe(float("nan"))
+
+        assert stall.observe(0.403) is False
+
+    def test_a_missing_fitness_does_not_count(self):
+        stall = StallDetector(limit=3)
+        stall.observe(0.403)
+        stall.observe(None)
+        stall.observe(0.403)
+
+        assert stall.observe(0.403) is False
+
+    def test_the_message_points_at_the_label_checker(self):
+        stall = StallDetector(limit=2)
+        stall.observe(0.403)
+        stall.observe(0.403)
+
+        assert "check_labels.py" in stall.message()
+        assert "will not stop on its own" in stall.message()
