@@ -163,11 +163,23 @@ guards.
    images, split leakage, a class present only in val, NaN-producing labels
    and a stale label cache; it warns on sub-pixel boxes, empty declared
    classes and class imbalance. Seconds, no GPU.
+15. **A notebook rots like documentation and costs GPU hours like code.**
+   `train_colab.ipynb` still trained on WaRP long after WaRP was retired from
+   training, and cloned the default branch, so a run started from it would
+   have used neither the pool nor any guard in this list.
+   `tests/test_colab_notebook.py` now asserts what it trains on, that it gates
+   on preflight *before* training, and that it fixes the descriptor path and
+   clears the label caches after a copy between machines.
 
 ## Working conventions
 
-- **Branch `claude/recycling-app-improvements-subgat`**, then merge to `main`
-  and push both. Do not push to `main` alone.
+- **Work on a feature branch, then merge to `main`.** Do not push to `main`
+  alone. Do not write a branch name here: this line used to name
+  `claude/recycling-app-improvements-subgat`, that branch was deleted from the
+  remote, and every `git pull` afterwards failed with *"your configuration
+  specifies to merge with the ref ... but no such ref was fetched"* — which
+  looks like a network problem and is a dead upstream. `git branch -vv` shows
+  what each local branch tracks.
 - Before every commit: `ruff check . && ruff format --check . && pytest`.
 - **Every behaviour change gets a test**, and the test is verified by
   reintroducing the bug and watching it fail. A test that has never failed
@@ -188,9 +200,16 @@ python scripts/import_dataset.py <descriptor or COCO .json> \
     --mapping mappings/<name>.yaml --out datasets/<name> [--split train|val]
 python scripts/build_pool.py --from datasets/a --from datasets/b \
     --out datasets/pool --images 3000 --val-images 500
+python scripts/preflight.py datasets/pool/data.yaml        # gate: no GPU, seconds
 python train.py --data datasets/pool/data.yaml --epochs 40 --cache disk
-python scripts/evaluate.py --data datasets/warp/data.yaml --policy policies/mrf_conveyor.yaml
+python scripts/evaluate.py --data datasets/warp/data.yaml \
+    --policy policies/mrf_conveyor.yaml --classes present
 ```
+
+`notebooks/train_colab.ipynb` runs that same sequence on a T4, and
+`tests/test_colab_notebook.py` holds it to it — the notebook silently went on
+training on WaRP for weeks after WaRP was retired, which is the kind of rot
+only a test catches.
 
 Validation is paid every epoch and dominates: 1,499 images took 17m43s, so an
 uncapped val split can cost more hours than the training it measures.
